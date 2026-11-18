@@ -58,10 +58,12 @@ class KagaKasamaRouteTests(unittest.TestCase):
         image=app.render_original(self.now,app.Weather(city='白山市'),rows,self.conf,hit_boxes=hit)
         self.assertEqual(image.size,(480,320))
         for n in (1,2,3):
-            for field in ('train_stations','train_time','train_detail'):
+            for field in ('train_station_depart','train_station_kan_arr',
+                          'train_station_kan_dep','train_station_arrive',
+                          'train_time','train_kan_arr','train_kan_dep','train_arrive','train_detail'):
                 self.assertIn(f'text:{field}_{n}',hit)
             x0,y0,x1,y1=hit[f'text:train_time_{n}']
-            self.assertTrue(205<=x0<x1<470 and 94+62*(n-1)<y0<y1<150+62*(n-1))
+            self.assertTrue(170<=x0<x1<245 and 80+74*(n-1)<y0<y1<112+74*(n-1))
 
     def test_diagnostics_shows_interchange_and_platform(self):
         info=app.train_diagnostics(self.now,self.conf)
