@@ -20,7 +20,7 @@ class FakeResponse:
     def read(self,n=-1):return self.buf.read(n)
 
 
-def fake_release(version='3.8.3',data=b'zipdata',url=None,digest=None):
+def fake_release(version='3.8.4',data=b'zipdata',url=None,digest=None):
     tag='v'+version
     filename=f'TURZX_Update_{tag}.zip'
     return dict(tag_name=tag,draft=False,prerelease=False,name='Release '+tag,
@@ -29,7 +29,7 @@ def fake_release(version='3.8.3',data=b'zipdata',url=None,digest=None):
                 digest=digest if digest is not None else 'sha256:'+hashlib.sha256(data).hexdigest())])
 
 
-def valid_zip(version='3.8.3'):
+def valid_zip(version='3.8.4'):
     exe=b'MZ'+bytes(range(256))*8
     meta=dict(app_id=update_manager.APP_ID,filename=update_manager.EXE_NAME,
               version=version,size=len(exe),sha256=hashlib.sha256(exe).hexdigest())
@@ -44,17 +44,17 @@ class GitHubUpdaterTests(unittest.TestCase):
     def test_correct_release_and_newer(self):
         payload=valid_zip()
         release=gh._get_release_from_json(fake_release(data=payload))
-        self.assertEqual(release.version,'3.8.3')
+        self.assertEqual(release.version,'3.8.4')
         self.assertTrue(gh.is_newer(release))
 
     def test_up_to_date(self):
-        release=gh._get_release_from_json(fake_release('3.8.2',data=b'x'*2048))
+        release=gh._get_release_from_json(fake_release('3.8.3',data=b'x'*2048))
         self.assertFalse(gh.is_newer(release))
 
     def test_reject_foreign_url(self):
-        for url in ('http://github.com/mizzo513/turzx-3p5-dashboard/releases/download/v3.8.3/TURZX_Update_v3.8.3.zip',
+        for url in ('http://github.com/mizzo513/turzx-3p5-dashboard/releases/download/v3.8.4/TURZX_Update_v3.8.4.zip',
                     'https://evil.invalid/update.zip',
-                    'https://github.com/another/repo/releases/download/v3.8.3/TURZX_Update_v3.8.3.zip'):
+                    'https://github.com/another/repo/releases/download/v3.8.4/TURZX_Update_v3.8.4.zip'):
             with self.subTest(url=url), self.assertRaises(ValueError):
                 gh._get_release_from_json(fake_release(data=b'x'*2048,url=url))
 
@@ -79,8 +79,8 @@ class GitHubUpdaterTests(unittest.TestCase):
             self.assertFalse((Path(tmp)/'update.zip').exists())
 
     def test_version_mismatch_in_zip(self):
-        payload=valid_zip('3.8.4')
-        release=gh._get_release_from_json(fake_release('3.8.3',data=payload))
+        payload=valid_zip('3.8.5')
+        release=gh._get_release_from_json(fake_release('3.8.4',data=payload))
         with tempfile.TemporaryDirectory() as tmp, patch.object(gh.urllib.request,'urlopen',return_value=FakeResponse(payload)):
             with self.assertRaisesRegex(ValueError,'バージョン'):
                 gh.download_verified_update(release,Path(tmp)/'update.zip')
@@ -89,7 +89,7 @@ class GitHubUpdaterTests(unittest.TestCase):
         payload=valid_zip()
         response=json.dumps(fake_release(data=payload)).encode()
         with patch.object(gh.urllib.request,'urlopen',return_value=FakeResponse(response)):
-            self.assertEqual(gh.fetch_latest_release().version,'3.8.3')
+            self.assertEqual(gh.fetch_latest_release().version,'3.8.4')
 
 
 if __name__=='__main__':
