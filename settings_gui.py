@@ -75,7 +75,11 @@ class SettingsWindow:
         look=ttk.Frame(main);look.grid(row=r,column=0,columnspan=3,sticky='w',pady=(5,0));r+=1
         ttk.Button(look,text='現在の設定で画面プレビュー',command=self.preview_current).pack(side='left',padx=(0,8))
         ttk.Button(look,text='標準レイアウトへ戻す',command=self.reset_layout).pack(side='left')
-        ttk.Button(main,text='更新ZIPからアップデート（EXE版）',command=self.open_update).grid(row=r,column=0,columnspan=3,sticky='w',pady=(6,0));r+=1
+        update_row=ttk.Frame(main);update_row.grid(row=r,column=0,columnspan=3,sticky='w',pady=(7,2));r+=1
+        ttk.Button(update_row,text='GitHubで最新版を確認',command=self.check_github_update).pack(side='left',padx=(0,8))
+        ttk.Button(update_row,text='更新ZIPを手動で選択',command=self.open_update).pack(side='left')
+        self.vars['auto_update_check']=tk.BooleanVar(value=bool(self.conf.get('auto_update_check',True)))
+        ttk.Checkbutton(main,text='設定画面を開いたときに最新版を自動確認（更新前に確認あり）',variable=self.vars['auto_update_check']).grid(row=r,column=0,columnspan=3,sticky='w');r+=1
         ttk.Separator(main).grid(row=r,column=0,columnspan=3,sticky='ew',pady=12);r+=1
         ttk.Label(main,text='天気情報（Open-Meteo / APIキー不要）',font=('Yu Gothic UI',11,'bold')).grid(row=r,column=0,columnspan=3,sticky='w',pady=(0,7));r+=1
         self.vars['weather_city']=tk.StringVar(value=self.conf.get('weather_city','白山市'))
@@ -115,6 +119,8 @@ class SettingsWindow:
         ttk.Label(main,text='※設定保存後、表示ソフトが通常0.5秒以内に検出します。天気API更新は通信状況によります。\n※時刻表は2026年3月14日改正の静的データです。遅延・運休等は反映しません。',foreground='#677b8d',justify='left').grid(row=r,column=0,columnspan=3,sticky='w',pady=(12,0))
         root.protocol('WM_DELETE_WINDOW',self.close)
         self.root.after(800,self.poll_runtime)
+        if self.conf.get('auto_update_check',True):
+            self.root.after(1800,lambda:self.check_github_update(silent=True))
 
     def field(self, main, label, name, row, fallback=None, show=None):
         self.vars[name]=tk.StringVar(value=str(self.conf.get(name, fallback or '')))
@@ -299,6 +305,10 @@ class SettingsWindow:
     def open_update(self):
         from update_manager import start_update_gui
         start_update_gui(self)
+
+    def check_github_update(self, silent=False):
+        from github_update_ui import check_for_updates
+        check_for_updates(self,silent=silent)
 
     def runtime_state(self):
         return get_runtime_status()
