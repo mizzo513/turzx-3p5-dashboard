@@ -17,5 +17,7 @@
   "live_settings": true,
   "ntp_server": "ntp.nict.jp",
   "ntp_sync_minutes": 30,
-  "ir_route": "via_kanazawa"
+  "ir_route": "via_kanazawa",
+  "weather_provider": "weatherapi",
+  "weatherapi_key": ""
 }
