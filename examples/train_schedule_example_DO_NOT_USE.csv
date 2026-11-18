@@ -1,0 +1,4 @@
+from,to,depart,arrive,line,platform,note,service
+金沢,津幡,07:00,07:13,普通,,,daily
+金沢,津幡,07:25,07:38,普通,,,weekday
+金沢,津幡,07:45,07:58,普通,,,weekend

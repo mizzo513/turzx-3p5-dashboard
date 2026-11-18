@@ -1,0 +1,20 @@
+{
+  "port": "AUTO",
+  "weather_city": "白山市",
+  "weather_latitude": 36.5144,
+  "weather_longitude": 136.5656,
+  "weather_update_minutes": 10,
+  "train_source": "ir_schedule",
+  "train_update_seconds": 30,
+  "train_count": 3,
+  "train_from": "金沢",
+  "train_to": "津幡",
+  "google_maps_api_key": "",
+  "google_refresh_minutes": 15,
+  "show_seconds": true,
+  "clock_12h": false,
+  "clock_update_mode": "compact",
+  "live_settings": true,
+  "ntp_server": "ntp.nict.jp",
+  "ntp_sync_minutes": 30
+}

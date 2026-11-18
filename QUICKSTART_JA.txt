@@ -1,0 +1,7 @@
+TURZX 3.5 V3.3
+ZIPを全展開後、START_HERE_Setup_and_Run.bat をダブルクリック。
+設定変更: open_settings_windows.bat
+通常起動: run_dashboard_windows.bat
+詳細: ONECLICK_GUIDE_JA.md
+
+V3.5: 文字レイアウト編集は設定画面から。EXE化はBUILD_ONE_EXE_WINDOWS.bat。
