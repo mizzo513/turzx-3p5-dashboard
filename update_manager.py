@@ -75,6 +75,39 @@ def extract_verified(path,destination):
         raise
 
 
+def clean_frozen_environment(env=None):
+    """Avoid passing PyInstaller onefile parent's extracted-temp context to updates.
+
+    New EXE instances must be independent from the parent frozen executable.
+    See PyInstaller Common Issues and Pitfalls: PYINSTALLER_RESET_ENVIRONMENT.
+    """
+    original=os.environ if env is None else env
+    clean={key:value for key,value in original.items()
+           if not key.upper().startswith('_PYI_') and key.upper() != '_MEIPASS2'}
+    clean['PYINSTALLER_RESET_ENVIRONMENT']='1'
+    return clean
+
+
+def preflight_executable(executable, *, timeout=60):
+    """Start staged new EXE in isolated environment BEFORE replacing the old one."""
+    flags=getattr(subprocess,'CREATE_NO_WINDOW',0)
+    try:
+        result=subprocess.run(
+            [str(executable),'--self-test'],
+            env=clean_frozen_environment(),
+            cwd=str(Path(executable).parent),
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=flags, timeout=timeout, check=False
+        )
+    except (OSError,subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(f'新EXEの事前起動テストに失敗しました: {exc}') from exc
+    if result.returncode != 0:
+        raise RuntimeError(
+            f'新EXEの事前起動テストに失敗しました (exit={result.returncode})。'
+            '旧EXEは変更していません。')
+    return True
+
+
 # This script is created temporarily in LOCALAPPDATA, not distributed as a
 # second application. The installed program remains a single EXE.
 POWERSHELL_APPLY = r'''param(
@@ -85,18 +118,39 @@ POWERSHELL_APPLY = r'''param(
     [Parameter(Mandatory=$true)][string]$Log
 )
 $ErrorActionPreference='Stop'
+$done=$false
 function Note([string]$s) {
     Add-Content -LiteralPath $Log -Value ((Get-Date -Format 'yyyy-MM-dd HH:mm:ss')+' '+$s) -Encoding UTF8
 }
+function Reset-PyInstallerEnvironment {
+    # This PowerShell process is a descendant of the *old* onefile EXE.
+    # Do not pass its extracted _MEI directory back into the replacement EXE.
+    Get-ChildItem Env: | Where-Object {
+        $_.Name -like '_PYI_*' -or $_.Name -eq '_MEIPASS2'
+    } | ForEach-Object {
+        Remove-Item -LiteralPath ('Env:'+$_.Name) -ErrorAction SilentlyContinue
+    }
+    $env:PYINSTALLER_RESET_ENVIRONMENT='1'
+}
+function Check-Exe([string]$Path) {
+    Reset-PyInstallerEnvironment
+    Note ('Validating EXE startup: '+$Path)
+    $proc=Start-Process -FilePath $Path -ArgumentList '--self-test' -PassThru -WindowStyle Hidden -WorkingDirectory (Split-Path $Path -Parent)
+    if (-not $proc.WaitForExit(60000)) {
+        try { $proc.Kill() } catch {}
+        throw 'New EXE startup test timed out'
+    }
+    if ($proc.ExitCode -ne 0) { throw ('New EXE startup test failed (exit '+$proc.ExitCode+')') }
+    Note 'New EXE startup test OK'
+}
 try {
+    Reset-PyInstallerEnvironment
     if ((Get-FileHash -LiteralPath $Source -Algorithm SHA256).Hash.ToLowerInvariant() -ne $Hash.ToLowerInvariant()) {
         throw 'Hash mismatch before replacement'
     }
     Note 'EXE validated. Waiting for previous GUI and USB engine to exit.'
-    $done=$false
     for ($i=0; $i -lt 120; $i++) {
         try {
-            # File.Replace is atomic on NTFS; backup is kept next to installed EXE.
             [System.IO.File]::Replace($Source,$Target,$Backup,$true)
             $done=$true
             break
@@ -108,14 +162,23 @@ try {
     }
     if (-not $done) { throw 'Old EXE is still in use, or target is not writable' }
     Note ('EXE replaced, backup retained: '+$Backup)
+    Check-Exe $Target
+    Reset-PyInstallerEnvironment
     Start-Process -FilePath $Target -WorkingDirectory (Split-Path $Target -Parent)
-    Note 'New EXE launched successfully'
+    Note 'New independent EXE launched'
     exit 0
 } catch {
     Note ('FAILED: '+$_.Exception.Message)
-    if (-not (Test-Path -LiteralPath $Target) -and (Test-Path -LiteralPath $Backup)) {
+    if ($done -and (Test-Path -LiteralPath $Backup)) {
+        try {
+            Copy-Item -LiteralPath $Backup -Destination $Target -Force
+            Note 'Old EXE restored from backup after failed startup'
+        } catch {
+            Note ('Backup restore failed: '+$_.Exception.Message)
+        }
+    } elseif (-not (Test-Path -LiteralPath $Target) -and (Test-Path -LiteralPath $Backup)) {
         Copy-Item -LiteralPath $Backup -Destination $Target -Force
-        Note 'Backed up EXE restored'
+        Note 'Missing EXE restored from backup'
     }
     exit 1
 }
@@ -152,11 +215,12 @@ def install_update_package(gui, selected, *, already_confirmed=False, expected_v
         if not target.is_file():raise ValueError('更新対象EXEが見つかりません')
         stage=target.parent/f'.turzx_update_{uuid.uuid4().hex}.new.exe'
         extract_verified(selected,stage)
+        preflight_executable(stage)
         data_dir=Path(os.environ.get('LOCALAPPDATA') or Path.home())/'TURZXDashboard'/'updates'
         data_dir.mkdir(parents=True,exist_ok=True)
         helper=data_dir/f'apply_{uuid.uuid4().hex}.ps1'
         helper.write_text(POWERSHELL_APPLY,encoding='utf-8-sig')
-        backup=target.with_name(f'{target.stem}_backup_v{APP_VERSION}.exe')
+        backup=target.with_name(f'{target.stem}_backup_v{APP_VERSION}_{uuid.uuid4().hex[:8]}.exe')
         log=data_dir/'updater.log'
         command=['powershell.exe','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',
                  '-File',str(helper),'-Source',str(stage),'-Target',str(target),
@@ -166,7 +230,7 @@ def install_update_package(gui, selected, *, already_confirmed=False, expected_v
         request_stop()
         subprocess.Popen(command,cwd=str(target.parent),stdin=subprocess.DEVNULL,
                          stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
-                         creationflags=flags,close_fds=True)
+                         creationflags=flags,close_fds=True,env=clean_frozen_environment())
         messagebox.showinfo('更新開始','表示ソフトを終了し、新しいEXEへ切り替えます。\n'
                             '元のEXEはバックアップとして保存されます。\n'
                             '失敗した場合は updates\\updater.log を確認してください。',parent=root)
