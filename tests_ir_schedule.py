@@ -10,7 +10,7 @@ import rail_core
 class IntegratedIRScheduleTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.conf=dash.load_settings()
+        cls.conf={**dash.load_settings(),'ir_route':'kanazawa_tsubata'}
         cls.doc=rail_core.load_schedule(dash.IR_SCHEDULE_PATH)
 
     def at(self, year,month,day,hour,minute):
