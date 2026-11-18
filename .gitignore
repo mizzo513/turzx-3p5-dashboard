@@ -1,0 +1,21 @@
+# Local settings may contain private WeatherAPI.com keys.
+settings.json
+**/settings.json
+.env
+.env.*
+!.env.example
+*.secret
+*.key
+*.pem
+*.p12
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+build/
+dist/
+*.spec
+*.log
+*.tmp
+updater.log
+runtime_status.json
