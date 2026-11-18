@@ -22,7 +22,7 @@ jobs:
       - name: Configure Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: '3.13'
+          python-version: '3.12'
           architecture: 'x64'
 
       - name: Check Python sources
@@ -43,6 +43,20 @@ jobs:
           python tools/build_release.py
           if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
           if (-not (Test-Path 'dist/TURZX_3p5_Dashboard.exe')) { throw 'Missing EXE' }
+
+      - name: Smoke-test frozen EXE startup on Windows
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path 'dist/TURZX_3p5_Dashboard.exe').Path
+          $proc = Start-Process -FilePath $exe -ArgumentList '--self-test' -PassThru
+          if (-not $proc.WaitForExit(60000)) {
+            $proc.Kill()
+            throw 'EXE smoke test timed out before startup completed'
+          }
+          if ($proc.ExitCode -ne 0) {
+            throw "EXE startup smoke test failed with exit code $($proc.ExitCode)"
+          }
+          Write-Host 'Frozen EXE startup smoke test successful'
 
       - name: Read application version
         id: version
