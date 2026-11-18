@@ -28,7 +28,7 @@ class Smoke(unittest.TestCase):
         def opener(req,timeout=0):
             calls.append(req.full_url)
             return Response(json.dumps(sample).encode())
-        w=x.fetch_weather(self.conf, opener)
+        w=x.fetch_weather({**self.conf,'weather_provider':'openmeteo'}, opener)
         self.assertEqual(w.city,'白山市')
         self.assertEqual(w.temperature,13.2)
         self.assertEqual(w.precip,42)
