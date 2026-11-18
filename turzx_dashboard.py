@@ -650,13 +650,14 @@ def render_original(now, weather, train_state, conf, hit_boxes=None):
     label('clock_datetime',datetime_text(now,conf))
     label('version','v'+APP_VERSION)
 
+    # Compact weather panel: no prefecture prefix, integer temperatures.
     panel('weather')
-    label('weather_city','石川・'+weather.city)
-    d.line((14,95,158,95),fill=BORDER)
-    draw_weather_icon(d,weather.code,12,105)
+    label('weather_city',weather.city)
+    d.line((13,82,119,82),fill=BORDER)
+    draw_weather_icon(d,weather.code,8,93)
     label('weather_description',weather_description(weather.code))
-    label('weather_temperature',value_or_dash(weather.temperature,lambda a:f'{a:.1f}°'),14)
-    d.line((14,167,158,167),fill=BORDER)
+    label('weather_temperature',value_or_dash(weather.temperature,lambda a:f'{a:.0f}°'),12)
+    d.line((13,150,119,150),fill=BORDER)
     label('weather_high_label','最高')
     label('weather_high',value_or_dash(weather.high,lambda a:f'{a:.0f}°C'))
     label('weather_low_label','最低')
@@ -668,43 +669,52 @@ def render_original(now, weather, train_state, conf, hit_boxes=None):
     label('weather_wind_label','風')
     label('weather_wind',value_or_dash(weather.wind,lambda a:f'{a:.1f}m/s'))
 
+    # Four separate editable time columns per connection: boarding, Kanazawa
+    # arrival, Kanazawa departure, and destination arrival. Do NOT combine
+    # these into one text run: that silently shrinks digits on 480px hardware.
     panel('train')
-    via=(train_state.source=='ir_schedule' and conf.get('ir_route','via_kanazawa')=='via_kanazawa')
-    label('train_header','加賀笠間→金沢→津幡' if via else conf['train_from']+' → '+conf['train_to'])
-    label('train_header_note',f"次の{conf.get('train_count',3)}本")
     for i in range(3):
-        panel(f'train_{i+1}')
+        n=i+1
+        panel(f'train_{n}')
         if i<len(train_state.trains):
             t=train_state.trains[i]
-            label(f'train_index_{i+1}',str(i+1))
+            label(f'train_index_{n}',str(n))
             if t.transfer_arrive is not None and t.transfer_depart is not None:
-                label(f'train_stations_{i+1}','加賀笠間 発     金沢 着/発       津幡 着')
-                label(f'train_time_{i+1}',
-                      f'{t.depart:%H:%M}  {t.transfer_arrive:%H:%M}/{t.transfer_depart:%H:%M}  {t.arrive:%H:%M}',10)
+                label(f'train_station_depart_{n}','発')
+                label(f'train_station_kan_arr_{n}','金沢着')
+                label(f'train_station_kan_dep_{n}','金沢発')
+                label(f'train_station_arrive_{n}','着')
+                label(f'train_time_{n}',t.depart.strftime('%H:%M'),12)
+                label(f'train_kan_arr_{n}',t.transfer_arrive.strftime('%H:%M'),12)
+                label(f'train_kan_dep_{n}',t.transfer_depart.strftime('%H:%M'),12)
+                label(f'train_arrive_{n}',t.arrive.strftime('%H:%M'),12)
                 wait=int((t.transfer_depart-t.transfer_arrive).total_seconds()//60)
-                platform=(t.transfer_arrival_platform or '?')+'→'+(t.transfer_departure_platform or '?')
-                transfer_text='直通（乗換不要）  ' if t.direct else (f'乗換{wait}分（注意）  ' if wait<=4 else f'乗換{wait}分  ')
-                caption=transfer_text + platform+'番線'
+                platforms=(t.transfer_arrival_platform or '?')+'→'+(t.transfer_departure_platform or '?')
+                caption=('直通（乗換不要）  ' if t.direct else f'乗換{wait}分  ')+platforms+'番線'
                 if t.arrive.date()>t.depart.date():caption+=' 翌日着'
                 if t.depart.date()>now.date():caption='翌日発 '+caption
-                label(f'train_detail_{i+1}',caption)
+                label(f'train_detail_{n}',caption)
             else:
-                label(f'train_time_{i+1}',t.depart.strftime('%H:%M')+' → '+t.arrive.strftime('%H:%M'),13)
+                label(f'train_legacy_time_{n}',t.depart.strftime('%H:%M')+' → '+t.arrive.strftime('%H:%M'))
                 duration=int(round((t.arrive-t.depart).total_seconds()/60))
                 caption=(t.line or '列車')+'  '+f'{duration}分'
                 if t.platform:caption+='  '+t.platform+'番線'
                 if t.depart.date()>now.date():caption='翌日 '+caption
                 elif t.arrive.date()>t.depart.date():caption+='  翌日着'
-                label(f'train_detail_{i+1}',caption)
+                label(f'train_detail_{n}',caption)
         elif i==0:
             label('train_empty',train_state.status)
         else:
-            label(f'train_placeholder_{i+1}','-- : --')
+            label(f'train_placeholder_{n}','-- : --')
 
-    panel('footer')
-    weather_status='天気:'+weather.fetched.strftime('%H:%M') if weather.fetched else '天気:未取得'
+    # Update timestamps are within their own panels, not in a fourth footer box.
+    d.line((13,283,119,283),fill=BORDER)
+    d.line((145,283,464,283),fill=BORDER)
+    weather_status='更新 '+weather.fetched.strftime('%H:%M') if weather.fetched else '天気 未取得'
+    train_status='更新 '+train_state.loaded.strftime('%H:%M') if train_state.loaded else '列車 未取得'
     label('footer_weather',weather_status)
-    label('footer_train','列車:'+train_state.status)
+    label('train_source_note','時刻表（予定）' if train_state.source=='ir_schedule' else train_state.source)
+    label('footer_train',train_status)
     return img
 
 
