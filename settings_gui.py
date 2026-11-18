@@ -92,12 +92,17 @@ class SettingsWindow:
         self.field(main,'経度','weather_longitude',r);r+=1
         self.field(main,'天気更新間隔（分）','weather_update_minutes',r);r+=1
         ttk.Separator(main).grid(row=r,column=0,columnspan=3,sticky='ew',pady=12);r+=1
-        ttk.Label(main,text='列車：金沢 → 津幡（時刻表・外部連携）',font=('Yu Gothic UI',11,'bold')).grid(row=r,column=0,columnspan=3,sticky='w',pady=(0,7));r+=1
+        ttk.Label(main,text='列車：加賀笠間 → 金沢 → 津幡（時刻表・外部連携）',font=('Yu Gothic UI',11,'bold')).grid(row=r,column=0,columnspan=3,sticky='w',pady=(0,7));r+=1
         ttk.Label(main,text='時刻情報の取得元').grid(row=r,column=0,sticky='w',pady=5)
         self.vars['train_source']=tk.StringVar(value=self.conf.get('train_source','ir_schedule'))
         combo=ttk.Combobox(main,textvariable=self.vars['train_source'],values=['ir_schedule','csv','json','google_transit'],state='readonly')
         combo.grid(row=r,column=1,sticky='ew',padx=(10,0));r+=1
         ttk.Label(main,text='ir_schedule：同梱2026/3/14改正ダイヤ / csv・json：外部連携 / google_transit：APIキー',foreground='#5c7184').grid(row=r,column=0,columnspan=3,sticky='w',pady=(0,5));r+=1
+        ttk.Label(main,text='IR時刻表の表示区間').grid(row=r,column=0,sticky='w',pady=5)
+        route_choices=('加賀笠間→金沢→津幡','金沢→津幡')
+        self.vars['ir_route']=tk.StringVar(value=route_choices[0] if self.conf.get('ir_route','via_kanazawa')=='via_kanazawa' else route_choices[1])
+        ttk.Combobox(main,textvariable=self.vars['ir_route'],values=route_choices,state='readonly',width=28).grid(row=r,column=1,sticky='ew',padx=(10,0));r+=1
+        ttk.Label(main,text='IR時刻表に収録された列車同士を金沢で接続。遅延・運休は反映しません。',foreground='#5c7184').grid(row=r,column=0,columnspan=3,sticky='w');r+=1
         self.field(main,'列車更新間隔（秒）','train_update_seconds',r);r+=1
         self.field(main,'表示列車数（最大3）','train_count',r);r+=1
         self.field(main,'Google Routes APIキー（任意）','google_maps_api_key',r,show='*');r+=1
@@ -153,6 +158,10 @@ class SettingsWindow:
         if not str(conf.get('ntp_server','')).strip():
             raise ValueError('NTPサーバー名が空欄です。')
         conf['train_update_seconds']=int(conf['train_update_seconds'])
+        choice=conf.get('ir_route','加賀笠間→金沢→津幡')
+        mapping={'加賀笠間→金沢→津幡':'via_kanazawa','金沢→津幡':'kanazawa_tsubata'}
+        if choice not in mapping:raise ValueError('IR時刻表の表示区間が不正です')
+        conf['ir_route']=mapping[choice]
         conf['train_count']=int(conf['train_count'])
         if conf['train_count']<1 or conf['train_count']>3:raise ValueError('列車表示数は1～3です。')
         if conf['train_update_seconds']<10:raise ValueError('列車更新間隔は10秒以上です。')
