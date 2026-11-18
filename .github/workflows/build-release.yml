@@ -61,6 +61,7 @@ jobs:
       - name: Integration-test updater EXE replacement and restart
         shell: pwsh
         run: |
+          Write-Host 'Windows PowerShell updater helper smoke test (including SHA256 validation)'
           python -X utf8 tools/test_updater_windows.py
           if ($LASTEXITCODE -ne 0) { throw 'Updater integration failed; release aborted' }
 
