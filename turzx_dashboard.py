@@ -84,6 +84,7 @@ DEFAULTS = {
     'clock_12h': False,
     'ntp_server': NTP_SERVER,
     'ntp_sync_minutes': 30,
+    'auto_update_check': True,
     'brightness_note': '',
     'text_styles': {},  # optional per-label x/y/size/color overrides
     'panel_styles': {},  # optional per-panel x/y/w/h/radius/fill/outline
