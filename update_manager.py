@@ -115,7 +115,8 @@ POWERSHELL_APPLY = r'''param(
     [Parameter(Mandatory=$true)][string]$Target,
     [Parameter(Mandatory=$true)][string]$Backup,
     [Parameter(Mandatory=$true)][string]$Hash,
-    [Parameter(Mandatory=$true)][string]$Log
+    [Parameter(Mandatory=$true)][string]$Log,
+    [switch]$NoLaunch
 )
 $ErrorActionPreference='Stop'
 $done=$false
@@ -163,9 +164,13 @@ try {
     if (-not $done) { throw 'Old EXE is still in use, or target is not writable' }
     Note ('EXE replaced, backup retained: '+$Backup)
     Check-Exe $Target
-    Reset-PyInstallerEnvironment
-    Start-Process -FilePath $Target -WorkingDirectory (Split-Path $Target -Parent)
-    Note 'New independent EXE launched'
+    if (-not $NoLaunch) {
+        Reset-PyInstallerEnvironment
+        Start-Process -FilePath $Target -WorkingDirectory (Split-Path $Target -Parent)
+        Note 'New independent EXE launched'
+    } else {
+        Note 'Validated updated EXE without GUI launch (integration test)'
+    }
     exit 0
 } catch {
     Note ('FAILED: '+$_.Exception.Message)
