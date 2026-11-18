@@ -124,24 +124,32 @@ try {
 
 def start_update_gui(gui):
     root=gui.root
-    if not getattr(sys,'frozen',False):
-        messagebox.showinfo('更新機能','Pythonソースで起動中です。更新ZIPは単一EXE版専用です。\nソース版の更新は差分パッチを適用してください。',parent=root)
-        return
     selected=filedialog.askopenfilename(parent=root,title='TURZX更新ZIPを選択',filetypes=[('更新ZIP','*.zip')])
-    if not selected:return
+    if selected:
+        install_update_package(gui,selected)
+
+
+def install_update_package(gui, selected, *, already_confirmed=False, expected_version=None):
+    """Install a trusted verified ZIP, selected locally or downloaded from GitHub."""
+    root=gui.root
+    if not getattr(sys,'frozen',False):
+        messagebox.showinfo('更新機能','Pythonソース版ではEXEを置換できません。\nGitHubでEXEをビルドしてからご利用ください。',parent=root)
+        return False
     stage=None
     try:
         manifest=manifest_from_zip(selected)
-        question=(f"V{APP_VERSION} → V{manifest['version']} に更新しますか？\n\n"
-                  '実行中の表示を停止し、旧EXEをバックアップして入れ替えます。\n'
-                  '設定・時刻表のユーザーデータは保持します。\n\n'
-                  '※発行者の電子署名は確認しません。信頼できるZIPのみ選択してください。')
-        if not messagebox.askyesno('アップデートの確認',question,parent=root):return
+        if expected_version is not None and manifest['version']!=expected_version:
+            raise ValueError('GitHubで確認したバージョンとZIPが一致しません')
+        if not already_confirmed:
+            question=(f"V{APP_VERSION} → V{manifest['version']} に更新しますか？\n\n"
+                      '実行中の表示を停止し、旧EXEをバックアップして入れ替えます。\n'
+                      '設定・時刻表のユーザーデータは保持します。\n\n'
+                      '※発行者の電子署名は確認しません。信頼できるZIPのみ選択してください。')
+            if not messagebox.askyesno('アップデートの確認',question,parent=root):return False
         target=Path(sys.executable).resolve()
         if target.name.lower()!=EXE_NAME.lower():
             raise ValueError(f'実行EXE名が異なります: {target.name}')
         if not target.is_file():raise ValueError('更新対象EXEが見つかりません')
-        # Stage beside installed EXE: required by atomic File.Replace.
         stage=target.parent/f'.turzx_update_{uuid.uuid4().hex}.new.exe'
         extract_verified(selected,stage)
         data_dir=Path(os.environ.get('LOCALAPPDATA') or Path.home())/'TURZXDashboard'/'updates'
@@ -154,7 +162,6 @@ def start_update_gui(gui):
                  '-File',str(helper),'-Source',str(stage),'-Target',str(target),
                  '-Backup',str(backup),'-Hash',manifest['sha256'],'-Log',str(log)]
         flags=getattr(subprocess,'CREATE_NO_WINDOW',0)
-        # Ask the USB engine to release its serial port and executable before replacing.
         from runtime_ipc import request_stop
         request_stop()
         subprocess.Popen(command,cwd=str(target.parent),stdin=subprocess.DEVNULL,
@@ -162,8 +169,10 @@ def start_update_gui(gui):
                          creationflags=flags,close_fds=True)
         messagebox.showinfo('更新開始','表示ソフトを終了し、新しいEXEへ切り替えます。\n'
                             '元のEXEはバックアップとして保存されます。\n'
-                            '更新できなかった場合は「updates\\updater.log」を確認してください。',parent=root)
+                            '失敗した場合は updates\\updater.log を確認してください。',parent=root)
         root.after(100,root.destroy)
+        return True
     except Exception as exc:
         if stage is not None:stage.unlink(missing_ok=True)
         messagebox.showerror('アップデート失敗',str(exc),parent=root)
+        return False
