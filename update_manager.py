@@ -133,6 +133,16 @@ function Reset-PyInstallerEnvironment {
     }
     $env:PYINSTALLER_RESET_ENVIRONMENT='1'
 }
+function Sha256Of([string]$File) {
+    # Use built-in .NET crypto instead of the optional Get-FileHash cmdlet.
+    $stream=[System.IO.File]::OpenRead($File)
+    try {
+        $sha=[System.Security.Cryptography.SHA256]::Create()
+        try {
+            return [System.BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-','').ToLowerInvariant()
+        } finally { $sha.Dispose() }
+    } finally { $stream.Dispose() }
+}
 function Check-Exe([string]$Path) {
     Reset-PyInstallerEnvironment
     Note ('Validating EXE startup: '+$Path)
@@ -146,7 +156,7 @@ function Check-Exe([string]$Path) {
 }
 try {
     Reset-PyInstallerEnvironment
-    if ((Get-FileHash -LiteralPath $Source -Algorithm SHA256).Hash.ToLowerInvariant() -ne $Hash.ToLowerInvariant()) {
+    if ((Sha256Of $Source) -ne $Hash.ToLowerInvariant()) {
         throw 'Hash mismatch before replacement'
     }
     Note 'EXE validated. Waiting for previous GUI and USB engine to exit.'
