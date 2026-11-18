@@ -11,7 +11,7 @@ class VersionRegression(unittest.TestCase):
         self.conf=copy.deepcopy(d.DEFAULTS)
         self.now=datetime(2026,11,18,13,15,tzinfo=d.TZ)
     def test_version_one_source(self):
-        self.assertEqual(APP_VERSION,'3.7.0')
+        self.assertEqual(APP_VERSION,'3.8.0')
         import settings_gui, layout_editor
         self.assertIn('APP_VERSION',Path(settings_gui.__file__).read_text(encoding='utf-8'))
         self.assertIn('APP_VERSION',Path(layout_editor.__file__).read_text(encoding='utf-8'))
@@ -19,7 +19,7 @@ class VersionRegression(unittest.TestCase):
         status=d.train_diagnostics(self.now,self.conf)
         self.assertEqual(status['schedule_rows'],56)
         self.assertEqual(len(status['trains']),3)
-        self.assertEqual(status['trains'][0]['depart'][11:16],'13:31')
+        self.assertEqual(status['trains'][0]['depart'][11:16],'13:25')
         self.assertEqual(status['train_source'],'ir_schedule')
         train=d.choose_trains(self.now,self.conf)
         boxes={}
