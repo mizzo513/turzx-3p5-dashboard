@@ -72,6 +72,7 @@ DEFAULTS = {
     'weather_longitude': 136.5656,
     'weather_update_minutes': 10,
     'train_source': 'ir_schedule',  # bundled IR timetable, csv, json, or google_transit
+    'ir_route': 'via_kanazawa',  # via_kanazawa or kanazawa_tsubata; old configs migrate automatically
     'train_update_seconds': 30,
     'train_count': 3,
     'train_from': '金沢',
@@ -154,6 +155,11 @@ class Train:
     note: str = ''
     origin: str = '金沢'
     destination: str = '津幡'
+    transfer_arrive: datetime | None = None
+    transfer_depart: datetime | None = None
+    transfer_arrival_platform: str = ''
+    transfer_departure_platform: str = ''
+    direct: bool = False
 
 
 @dataclass
@@ -324,8 +330,10 @@ def resolve_ir_schedule(path=None):
 
 def train_diagnostics(now, conf):
     """Offline, no COM access; expose exact data source and planned departures."""
+    via=conf.get('train_source')=='ir_schedule' and conf.get('ir_route','via_kanazawa')=='via_kanazawa'
     result={'engine_version':APP_VERSION,'train_source':conf.get('train_source'),
-            'train_from':conf.get('train_from'),'train_to':conf.get('train_to'),
+            'train_from':'加賀笠間' if via else conf.get('train_from'), 'train_to':conf.get('train_to'),
+            'ir_route':conf.get('ir_route','via_kanazawa'),
             'settings_file':str(SETTINGS)}
     if conf.get('train_source')=='ir_schedule':
         try:
@@ -338,6 +346,9 @@ def train_diagnostics(now, conf):
         state=choose_trains(now,conf)
         result.update(status=state.status,error=state.error,trains=[
             {'depart':t.depart.isoformat(),'arrive':t.arrive.isoformat(),
+             'kanazawa_arrive':t.transfer_arrive.isoformat() if t.transfer_arrive else None,
+             'kanazawa_depart':t.transfer_depart.isoformat() if t.transfer_depart else None,
+             'direct':t.direct,'transfer_platform':(t.transfer_arrival_platform+'→'+t.transfer_departure_platform) if t.transfer_arrive else '',
              'train':t.line,'platform':t.platform} for t in state.trains])
     except Exception as exc:
         result.update(status='取得失敗',error=str(exc),trains=[])
@@ -351,12 +362,40 @@ def upcoming_from_ir_schedule(now, conf, path=None):
     unknown running-day rules are never assumed valid.
     """
     import rail_core
-    if conf.get('train_from')!='金沢' or conf.get('train_to')!='津幡':
+    route=conf.get('ir_route','via_kanazawa')
+    if route not in ('via_kanazawa','kanazawa_tsubata'):
+        return TrainState([], '経路設定が不正', 'ir_schedule',error='Unsupported IR route')
+    if conf.get('train_to')!='津幡':
+        return TrainState([], '到着駅は津幡のみ対応', 'ir_schedule',error='Unsupported destination')
+    if route=='kanazawa_tsubata' and conf.get('train_from')!='金沢':
         return TrainState([], '対象区間は金沢→津幡', 'ir_schedule',error='Unsupported stations')
     try:
         doc,selected_schedule=resolve_ir_schedule(path)
     except Exception as exc:
         return TrainState([], '時刻表未配置・読込失敗', 'ir_schedule',error=str(exc))
+    # Both legs of the user-provided timetable are matched by rail_core;
+    # no inferred departures or arrival times.
+    if route=='via_kanazawa':
+        result=[]
+        for delta in (-1,0,1,2):
+            day=now.date()+timedelta(days=delta)
+            for j in rail_core.journeys_for_date(doc,day):
+                if j.dep<now: continue
+                result.append(Train(
+                    depart=j.dep,arrive=j.arr,line=j.first_train+' / '+j.second_train,
+                    platform=j.arr_platform,note='収録時刻表',origin='加賀笠間',destination='津幡',
+                    transfer_arrive=j.kan_arr,transfer_depart=j.kan_dep,
+                    transfer_arrival_platform=j.arr_platform,
+                    transfer_departure_platform=j.dep_platform,direct=j.direct))
+        result.sort(key=lambda t:(t.depart,t.arrive,t.line))
+        unique=[];seen=set()
+        for item in result:
+            key=(item.depart,item.transfer_arrive,item.transfer_depart,item.arrive)
+            if key not in seen:seen.add(key);unique.append(item)
+        rev=str(doc.get('revision','')).replace('2026-','')
+        source_label='加賀笠間→金沢→津幡 時刻表(予定)' if not rev else '経由時刻表'+rev+'改正'
+        return TrainState(unique[:int(conf['train_count'])],source_label,'ir_schedule',jp_now())
+
     result=[]
     for delta in (-1,0,1,2):
         day=now.date()+timedelta(days=delta)
@@ -630,20 +669,33 @@ def render_original(now, weather, train_state, conf, hit_boxes=None):
     label('weather_wind',value_or_dash(weather.wind,lambda a:f'{a:.1f}m/s'))
 
     panel('train')
-    label('train_header',conf['train_from']+' → '+conf['train_to'])
+    via=(train_state.source=='ir_schedule' and conf.get('ir_route','via_kanazawa')=='via_kanazawa')
+    label('train_header','加賀笠間→金沢→津幡' if via else conf['train_from']+' → '+conf['train_to'])
     label('train_header_note',f"次の{conf.get('train_count',3)}本")
     for i in range(3):
         panel(f'train_{i+1}')
         if i<len(train_state.trains):
             t=train_state.trains[i]
             label(f'train_index_{i+1}',str(i+1))
-            label(f'train_time_{i+1}',t.depart.strftime('%H:%M')+' → '+t.arrive.strftime('%H:%M'),13)
-            duration=int(round((t.arrive-t.depart).total_seconds()/60))
-            caption=(t.line or '列車')+'  '+f'{duration}分'
-            if t.platform:caption+='  '+t.platform+'番線'
-            if t.depart.date()>now.date():caption='翌日 '+caption
-            elif t.arrive.date()>t.depart.date():caption+='  翌日着'
-            label(f'train_detail_{i+1}',caption)
+            if t.transfer_arrive is not None and t.transfer_depart is not None:
+                label(f'train_stations_{i+1}','加賀笠間 発     金沢 着/発       津幡 着')
+                label(f'train_time_{i+1}',
+                      f'{t.depart:%H:%M}  {t.transfer_arrive:%H:%M}/{t.transfer_depart:%H:%M}  {t.arrive:%H:%M}',10)
+                wait=int((t.transfer_depart-t.transfer_arrive).total_seconds()//60)
+                platform=(t.transfer_arrival_platform or '?')+'→'+(t.transfer_departure_platform or '?')
+                transfer_text='直通（乗換不要）  ' if t.direct else (f'乗換{wait}分（注意）  ' if wait<=4 else f'乗換{wait}分  ')
+                caption=transfer_text + platform+'番線'
+                if t.arrive.date()>t.depart.date():caption+=' 翌日着'
+                if t.depart.date()>now.date():caption='翌日発 '+caption
+                label(f'train_detail_{i+1}',caption)
+            else:
+                label(f'train_time_{i+1}',t.depart.strftime('%H:%M')+' → '+t.arrive.strftime('%H:%M'),13)
+                duration=int(round((t.arrive-t.depart).total_seconds()/60))
+                caption=(t.line or '列車')+'  '+f'{duration}分'
+                if t.platform:caption+='  '+t.platform+'番線'
+                if t.depart.date()>now.date():caption='翌日 '+caption
+                elif t.arrive.date()>t.depart.date():caption+='  翌日着'
+                label(f'train_detail_{i+1}',caption)
         elif i==0:
             label('train_empty',train_state.status)
         else:
@@ -750,6 +802,7 @@ def read_live_settings():
     if not isinstance(fresh.get('ntp_server'),str) or not fresh['ntp_server'].strip():
         raise ValueError('NTPサーバー名が未設定です')
     fresh['train_count']=max(1,min(3,int(fresh['train_count'])))
+    if fresh.get('ir_route') not in ('via_kanazawa','kanazawa_tsubata'): fresh['ir_route']='via_kanazawa'
     fresh['train_update_seconds']=max(10,int(fresh['train_update_seconds']))
     fresh['weather_update_minutes']=max(5,int(fresh['weather_update_minutes']))
     if not str(fresh.get('port','')).strip():
@@ -899,7 +952,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                             future=None  # the old in-flight request is ignored
                         if any(prev_conf.get(k)!=conf.get(k) for k in ('ntp_server','ntp_sync_minutes')):
                             ntp_due=0.0
-                        if any(prev_conf.get(k)!=conf.get(k) for k in ('train_source','train_from','train_to','train_update_seconds','train_count','google_maps_api_key','google_refresh_minutes')):
+                        if any(prev_conf.get(k)!=conf.get(k) for k in ('train_source','ir_route','train_from','train_to','train_update_seconds','train_count','google_maps_api_key','google_refresh_minutes')):
                             train=TrainState([], '更新中',conf['train_source'])
                             rail_due=0.0
                             rail_future=None
