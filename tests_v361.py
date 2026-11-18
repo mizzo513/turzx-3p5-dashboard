@@ -13,8 +13,8 @@ class VersionRegression(unittest.TestCase):
     def test_version_one_source(self):
         self.assertEqual(APP_VERSION,'3.7.0')
         import settings_gui, layout_editor
-        self.assertIn('APP_VERSION',Path(settings_gui.__file__).read_text())
-        self.assertIn('APP_VERSION',Path(layout_editor.__file__).read_text())
+        self.assertIn('APP_VERSION',Path(settings_gui.__file__).read_text(encoding='utf-8'))
+        self.assertIn('APP_VERSION',Path(layout_editor.__file__).read_text(encoding='utf-8'))
     def test_train_data_and_render(self):
         status=d.train_diagnostics(self.now,self.conf)
         self.assertEqual(status['schedule_rows'],56)
