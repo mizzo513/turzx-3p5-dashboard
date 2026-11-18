@@ -16,5 +16,6 @@
   "clock_update_mode": "compact",
   "live_settings": true,
   "ntp_server": "ntp.nict.jp",
-  "ntp_sync_minutes": 30
+  "ntp_sync_minutes": 30,
+  "ir_route": "via_kanazawa"
 }
