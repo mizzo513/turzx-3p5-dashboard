@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import socket
 import csv
+import copy
 import json
 import logging
 import os
@@ -87,6 +88,7 @@ DEFAULTS = {
     'ntp_sync_minutes': 30,
     'auto_update_check': True,
     'brightness_note': '',
+    'layout_revision': 390, # new compact two-panel layout (v3.9.0)
     'text_styles': {},  # optional per-label x/y/size/color overrides
     'panel_styles': {},  # optional per-panel x/y/w/h/radius/fill/outline
 }
@@ -114,6 +116,31 @@ def load_settings():
         if not isinstance(saved, dict):
             raise ValueError('settings.json must contain an object')
         conf.update(saved)
+        # A narrow weather panel and 4-column train clocks cannot safely reuse
+        # old saved coordinates or font sizes. Preserve original styles for
+        # rollback while carrying forward user-selected colors.
+        if int(saved.get('layout_revision',0) or 0)<390:
+            old_text=saved.get('text_styles') or {}
+            old_panels=saved.get('panel_styles') or {}
+            if (old_text or old_panels) and 'layout_backup_v383' not in saved:
+                conf['layout_backup_v383']={
+                    'text_styles':copy.deepcopy(old_text),
+                    'panel_styles':copy.deepcopy(old_panels),
+                }
+            valid_text=set(__import__('text_layout').ELEMENTS)
+            valid_panels=set(__import__('panel_layout').PANELS)
+            conf['text_styles']={
+                key:{'color':value['color']}
+                for key,value in old_text.items()
+                if key in valid_text and isinstance(value,dict) and 'color' in value
+            } if isinstance(old_text,dict) else {}
+            conf['panel_styles']={
+                key:{name:value[name] for name in ('fill','outline') if name in value}
+                for key,value in old_panels.items()
+                if key in valid_panels and isinstance(value,dict)
+                and any(name in value for name in ('fill','outline'))
+            } if isinstance(old_panels,dict) else {}
+        conf['layout_revision']=390
     return conf
 
 
