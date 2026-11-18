@@ -32,6 +32,7 @@ from text_layout import props as style_props, validate_styles
 from panel_layout import draw_panel, validate_panels
 from version_info import APP_VERSION
 from internet_clock import InternetClock, query_ntp, NTP_SERVER
+from weatherapi_provider import fetch_weatherapi, WeatherAPIError
 from contextlib import nullcontext
 
 BUNDLE_ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))
@@ -72,6 +73,8 @@ DEFAULTS = {
     'weather_latitude': 36.5144,
     'weather_longitude': 136.5656,
     'weather_update_minutes': 10,
+    'weather_provider': 'weatherapi', # weatherapi or openmeteo
+    'weatherapi_key': '', # local settings only, never bundled into public releases
     'train_source': 'ir_schedule',  # bundled IR timetable, csv, json, or google_transit
     'ir_route': 'via_kanazawa',  # via_kanazawa or kanazawa_tsubata; old configs migrate automatically
     'train_update_seconds': 30,
@@ -171,6 +174,11 @@ class Weather:
     code: int | None = None
     fetched: datetime | None = None
     error: str | None = '未取得'
+    provider: str = 'openmeteo'
+    condition_text: str = ''
+    raw_condition_code: int | None = None
+    precip_mm: float | None = None # diagnostic only; never overrides conditions
+    data_time: datetime | None = None
 
 
 @dataclass
@@ -212,8 +220,8 @@ def weather_description(code):
     return '天気'
 
 
-def fetch_weather(conf, opener=urlopen):
-    """Open-Meteo Forecast API; official fields, no fabricated conditions."""
+def fetch_weather_openmeteo(conf, opener=urlopen):
+    """Original Open-Meteo adapter retained for explicit provider selection."""
     params = {
         'latitude': float(conf['weather_latitude']),
         'longitude': float(conf['weather_longitude']),
@@ -254,7 +262,18 @@ def fetch_weather(conf, opener=urlopen):
         code=integer(current.get('weather_code')),
         fetched=now,
         error=None,
+        provider='openmeteo',
     )
+
+
+def fetch_weather(conf, opener=urlopen):
+    """Fetch only from the selected provider. Never silently switch sources."""
+    provider=str(conf.get('weather_provider','weatherapi')).lower().strip()
+    if provider=='openmeteo':
+        return fetch_weather_openmeteo(conf,opener)
+    if provider=='weatherapi':
+        return Weather(**fetch_weatherapi(conf,opener,fetched=jp_now()))
+    raise ValueError('天気の取得元が不正です')
 
 
 def parse_clock(s):
@@ -682,7 +701,7 @@ def render_original(now, weather, train_state, conf, hit_boxes=None):
     label('weather_city',weather.city)
     d.line((13,82,119,82),fill=BORDER)
     draw_weather_icon(d,weather.code,8,93)
-    label('weather_description',weather_description(weather.code))
+    label('weather_description',weather.condition_text or ('キー未設定' if weather.code is None and weather.error and 'APIキー' in weather.error else weather_description(weather.code)))
     label('weather_temperature',value_or_dash(weather.temperature,lambda a:f'{a:.0f}°'),12)
     d.line((13,150,119,150),fill=BORDER)
     label('weather_high_label','最高')
@@ -829,6 +848,8 @@ def settings_digest():
 def read_live_settings():
     """Validate and use a newly written settings file, otherwise retain old configuration."""
     fresh=load_settings()
+    if fresh.get('weather_provider') not in ('weatherapi','openmeteo'):
+        raise ValueError('Unknown weather provider')
     if fresh.get('train_source') not in ('ir_schedule','csv','json','google_transit'):
         raise ValueError('Unknown train source')
     if str(fresh.get('clock_update_mode','compact')) not in ('compact','safe_strip'):
@@ -894,7 +915,7 @@ def release_singleton_lock(fh):
 
 
 def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds=0):
-    weather=Weather(city=conf['weather_city'])
+    weather=Weather(city=conf['weather_city'],provider=conf.get('weather_provider','weatherapi'))
     train=TrainState([], '読込中',conf['train_source'])
     if preview_demo:
         # Demo data exists only behind an explicit '--demo-preview' option, not live mode.
@@ -983,8 +1004,8 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                         conf.clear();conf.update(incoming)
                         last_settings_hash=current_hash
                         logger.info('Live settings applied; weather=%s, port=%s, clock=%s',conf['weather_city'],conf['port'],conf.get('clock_update_mode'))
-                        if any(prev_conf.get(k)!=conf.get(k) for k in ('weather_city','weather_latitude','weather_longitude','weather_update_minutes')):
-                            weather=Weather(city=conf['weather_city'])
+                        if any(prev_conf.get(k)!=conf.get(k) for k in ('weather_city','weather_latitude','weather_longitude','weather_update_minutes','weather_provider','weatherapi_key')):
+                            weather=Weather(city=conf['weather_city'],provider=conf.get('weather_provider','weatherapi'))
                             weather_due=0.0
                             future=None  # the old in-flight request is ignored
                         if any(prev_conf.get(k)!=conf.get(k) for k in ('ntp_server','ntp_sync_minutes')):
@@ -1041,6 +1062,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
             data_signature=(
                 weather.city,weather.temperature,weather.high,weather.low,weather.precip,
                 weather.humidity,weather.wind,weather.code,weather.error,
+                weather.provider,weather.condition_text,weather.raw_condition_code,
                 weather.fetched.strftime('%H:%M') if weather.fetched else None,
                 train.status, tuple((t.depart.isoformat(),t.arrive.isoformat(),t.line,t.platform) for t in train.trains),
                 now.date()
@@ -1100,6 +1122,8 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                                     port=port_name,
                                     clock=hm+(':'+sec if sec else ''),
                                     weather_city=weather.city,
+                                    weather_provider=weather.provider,
+                                    weather_condition=weather.condition_text or weather_description(weather.code),
                                     weather_status='OK' if weather.error is None else '待機/エラー',
                                     train_status=train.status,
                                     settings_hash=last_settings_hash,
