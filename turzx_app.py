@@ -5,6 +5,19 @@ import sys
 
 
 def main():
+    if len(sys.argv)>1 and sys.argv[1]=='--self-test':
+        # Runs without a GUI window or USB hardware. Verifies that the frozen
+        # bootloader can extract Python DLLs and import bundled dependencies.
+        import tkinter
+        from PIL import Image, ImageDraw, ImageFont
+        import serial
+        from datetime import datetime
+        from turzx_dashboard import DEFAULTS, Weather, TrainState, render_original, TZ
+        image=render_original(datetime(2026,11,18,12,0,tzinfo=TZ),
+                              Weather(),TrainState(),DEFAULTS)
+        if image.size!=(480,320):
+            return 4
+        return 0
     if len(sys.argv)>1 and sys.argv[1]=='--engine':
         # Same EXE is relaunched as background process, without an extra Python install.
         sys.argv=[sys.argv[0],*sys.argv[2:]]
