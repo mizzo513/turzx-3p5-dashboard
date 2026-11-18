@@ -82,6 +82,19 @@ class SettingsWindow:
         ttk.Checkbutton(main,text='設定画面を開いたときに最新版を自動確認（更新前に確認あり）',variable=self.vars['auto_update_check']).grid(row=r,column=0,columnspan=3,sticky='w');r+=1
         ttk.Separator(main).grid(row=r,column=0,columnspan=3,sticky='ew',pady=12);r+=1
         ttk.Label(main,text='天気情報（Open-Meteo / APIキー不要）',font=('Yu Gothic UI',11,'bold')).grid(row=r,column=0,columnspan=3,sticky='w',pady=(0,7));r+=1
+        ttk.Label(main,text='天気API取得元').grid(row=r,column=0,sticky='w',pady=5)
+        self.vars['weather_provider']=tk.StringVar(
+            value='WeatherAPI.com' if self.conf.get('weather_provider','weatherapi')=='weatherapi' else 'Open-Meteo')
+        self.weather_provider_combo=ttk.Combobox(
+            main,textvariable=self.vars['weather_provider'],
+            values=['WeatherAPI.com','Open-Meteo'],state='readonly',width=27)
+        self.weather_provider_combo.grid(row=r,column=1,sticky='ew',padx=(10,0));r+=1
+        self.field(main,'WeatherAPI.com APIキー','weatherapi_key',r,show='*');r+=1
+        ttk.Label(main,text='WeatherAPI.com使用時はAPIキーが必要です。キーはPCの設定に保存し、GitHubには送信しません。',
+                  foreground='#5c7184').grid(row=r,column=0,columnspan=3,sticky='w');r+=1
+        ttk.Button(main,text='WeatherAPI.comで無料APIキーを取得',
+                   command=lambda:webbrowser.open('https://www.weatherapi.com/signup.aspx')
+                   ).grid(row=r,column=0,columnspan=3,sticky='w',pady=(3,6));r+=1
         self.vars['weather_city']=tk.StringVar(value=self.conf.get('weather_city','白山市'))
         ttk.Label(main,text='天気の地域').grid(row=r,column=0,sticky='w',pady=5)
         self.city_combo=ttk.Combobox(main,textvariable=self.vars['weather_city'],values=list(CITIES)+['任意の地点'],state='readonly',width=27)
@@ -151,6 +164,12 @@ class SettingsWindow:
         conf['weather_longitude']=float(conf['weather_longitude'])
         if not (-90<=conf['weather_latitude']<=90 and -180<=conf['weather_longitude']<=180):
             raise ValueError('緯度・経度を確認してください。')
+        provider_name=conf.get('weather_provider','WeatherAPI.com')
+        provider_values={'WeatherAPI.com':'weatherapi','Open-Meteo':'openmeteo'}
+        if provider_name not in provider_values:
+            raise ValueError('天気APIの取得元が不正です')
+        conf['weather_provider']=provider_values[provider_name]
+        conf['weatherapi_key']=str(conf.get('weatherapi_key') or '').strip()
         conf['weather_update_minutes']=int(conf['weather_update_minutes'])
         conf['ntp_sync_minutes']=int(conf.get('ntp_sync_minutes',30))
         if not 5 <= conf['ntp_sync_minutes'] <= 1440:
@@ -193,7 +212,11 @@ class SettingsWindow:
         def work():
             try:
                 w=fetch_weather(conf)
-                result=f'{w.city}: 気温 {w.temperature}℃、天気 {w.code}、降水 {w.precip}%'
+                at=w.data_time.astimezone(jp_now().tzinfo).strftime('%H:%M') if w.data_time else '不明'
+                label=w.condition_text or ('code '+str(w.code))
+                origin='WeatherAPI.com' if w.provider=='weatherapi' else 'Open-Meteo'
+                rain=f'、現在降水量 {w.precip_mm}mm（判定には不使用）' if w.precip_mm is not None else ''
+                result=f'{origin} / {w.city}: {label}、気温 {w.temperature}℃、当日降水確率 {w.precip}%、気象データ時刻 {at}{rain}'
             except Exception as exc:result='天気APIに接続できません：'+str(exc)[:140]
             self.root.after(0,lambda:self.status.set(result))
         threading.Thread(target=work,daemon=True).start()
