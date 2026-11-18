@@ -7,6 +7,7 @@ import tkinter as tk
 from tkinter import colorchooser, messagebox, ttk
 from PIL import ImageTk
 from panel_layout import PANELS, settings as panel_props, validate_panels
+from layout_wheel import wheel_value, NUMERIC_FIELDS
 from text_layout import ELEMENTS, props as text_props, validate_styles
 from turzx_dashboard import Weather, TrainState, choose_trains, jp_now, render_original
 from version_info import APP_VERSION
@@ -26,13 +27,14 @@ class LayoutEditor:
         self.selected=('text','clock_datetime')
         self.drag=None
         self.loading=False
+        self.unsaved=False
         self.refresh_job=None
         self.status=tk.StringVar(value='プレビューは実機へ送信しません。編集後に「実機へ即時反映」を押してください。')
         self.hit_boxes={}
 
         header=ttk.Frame(self.window,padding=(12,8));header.grid(row=0,column=0,sticky='ew')
         ttk.Label(header,text='文字・パネル枠の編集 (480×320)',font=('Yu Gothic UI',14,'bold')).pack(anchor='w')
-        ttk.Label(header,text='左で編集対象を選択。プレビューの対象をドラッグして移動できます。枠は右下をドラッグして拡大縮小します。',foreground='#597184').pack(anchor='w')
+        ttk.Label(header,text='数値欄のホイールで±1、Shift+ホイールで±10。プレビューのみ変更し、実機は保存ボタンで反映。',foreground='#597184').pack(anchor='w')
         self.preview=tk.Canvas(self.window,width=480,height=320,highlightthickness=1,highlightbackground='#70879f',cursor='hand2')
         self.preview.grid(row=1,column=0,pady=(2,8))
         self.preview.bind('<ButtonPress-1>',self.on_down)
@@ -73,6 +75,13 @@ class LayoutEditor:
             lbl.grid(row=row,column=0,sticky='w',pady=1)
             entry=ttk.Entry(fields,textvariable=self.vars[key],width=13)
             entry.grid(row=row,column=1,sticky='ew',pady=1,padx=(8,4))
+            if key in NUMERIC_FIELDS:
+                # Only the hovered numeric entry handles the event. "break"
+                # prevents both the editor list and the background settings
+                # window from scrolling.
+                entry.bind('<MouseWheel>',lambda event,n=key:self.on_numeric_wheel(event,n))
+                entry.bind('<Button-4>',lambda event,n=key:self.on_numeric_wheel(event,n,linux_direction=1))
+                entry.bind('<Button-5>',lambda event,n=key:self.on_numeric_wheel(event,n,linux_direction=-1))
             if key in ('color','outline','fill'):
                 ttk.Button(fields,text='選択',width=5,command=lambda n=key:self.pick_color(n)).grid(row=row,column=2,padx=(0,3))
             self.fieldwidgets[key]=(lbl,entry)
@@ -127,7 +136,37 @@ class LayoutEditor:
                 if not (0<=new['x']<480 and 0<=new['y']<320 and 2<=new['w']<=480-new['x'] and 2<=new['h']<=320-new['y'] and 0<=new['radius']<=30 and 0<=new['border_width']<=12):return
                 self.panel_styles[key]=new
         except (ValueError,TypeError):return
+        self.unsaved=True
+        self.status.set('未反映：プレビューのみ更新しました。実機へ反映するには「実機へ即時反映（保存）」を押してください。')
         self.queue_refresh()
+
+    def on_numeric_wheel(self,event,name,linux_direction=None):
+        """Change the hovered numeric entry; never save or communicate with hardware."""
+        if name not in NUMERIC_FIELDS:
+            return 'break'
+        kind,_=self.selected
+        if (kind=='text' and name not in ('x','y','size')) or (
+                kind=='panel' and name=='size'):
+            return 'break'
+        if linux_direction is None:
+            delta=getattr(event,'delta',0)
+            if not delta:
+                return 'break'
+            direction=1 if delta>0 else -1
+        else:
+            direction=linux_direction
+        props=self.current_props()
+        try:
+            current=int(self.vars[name].get())
+        except (TypeError,ValueError):
+            current=int(props[name])
+        new_value=wheel_value(name,current,direction,kind=kind,geometry=props,
+                              shift=bool(getattr(event,'state',0)&0x0001))
+        if new_value!=current or self.vars[name].get()!=str(new_value):
+            self.vars[name].set(str(new_value))
+            # A StringVar trace updates preview-only self.text_styles/panel_styles.
+            # Deliberately do NOT call gui.save(), write settings, or send USB.
+        return 'break'
 
     def on_selection(self,_event=None):
         idx=self.listbox.curselection()
@@ -188,6 +227,8 @@ class LayoutEditor:
                 new['x']=min(480-new['w'],max(0,p['x']+dx))
                 new['y']=min(320-new['h'],max(0,p['y']+dy))
             self.panel_styles[key]=new
+        self.unsaved=True
+        self.status.set('未反映：プレビューのみ更新しました。保存ボタンを押すと実機へ反映されます。')
         self.load_selected();self.queue_refresh()
 
     def on_up(self,_event):
@@ -202,11 +243,15 @@ class LayoutEditor:
     def reset_one(self):
         kind,key=self.selected
         (self.text_styles if kind=='text' else self.panel_styles).pop(key,None)
+        self.unsaved=True
+        self.status.set('未反映：選択項目を初期化しました。保存ボタンで実機へ反映してください。')
         self.load_selected();self.refresh()
 
     def reset_all(self):
         if messagebox.askyesno('初期化','すべての文字・枠を標準レイアウトに戻しますか？',parent=self.window):
             self.text_styles={};self.panel_styles={}
+            self.unsaved=True
+            self.status.set('未反映：プレビューは初期化されています。保存ボタンで実機へ反映してください。')
             self.load_selected();self.refresh()
 
     def preview_config(self):
@@ -254,6 +299,7 @@ class LayoutEditor:
             self.gui.conf['text_styles']=copy.deepcopy(self.text_styles)
             self.gui.conf['panel_styles']=copy.deepcopy(self.panel_styles)
             if self.gui.save():
+                self.unsaved=False
                 self.status.set('保存しました。表示中の実機に変更が反映されます。文字や枠の重なりはプレビューで確認してください。')
         except Exception as exc:
             messagebox.showerror('レイアウト設定エラー',str(exc),parent=self.window)
