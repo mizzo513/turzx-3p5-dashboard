@@ -99,9 +99,8 @@ class HeaderRefreshLayoutTests(unittest.TestCase):
                 b=boxes[f'text:{key}_{i}']
                 self.assertGreaterEqual(b[1],p[1])
                 self.assertLessEqual(b[3],p[3]+1,(i,key,b,p))
-        note=boxes['text:train_source_note']
-        self.assertGreater(note[1],290)
-        self.assertLessEqual(note[3],train_panel[3])
+        self.assertNotIn('text:train_source_note',boxes)
+        self.assertGreaterEqual(train_panel[3],310)
 
     def test_migration_preserves_relative_custom_positions_and_colors(self):
         old={
