@@ -1,0 +1,89 @@
+# -*- coding: utf-8 -*-
+"""Windows Tk regression tests for the compact, tabbed settings GUI.
+
+Must create the real GUI rather than relying on source-text assertions.
+Does not contact APIs, start the USB engine or save credentials to disk.
+"""
+import copy
+import os
+import tkinter as tk
+import unittest
+
+from settings_gui import SettingsWindow
+
+
+@unittest.skipUnless(os.name=='nt','Tk GUI integration requires Windows runner')
+class TestSettingsNotebook(unittest.TestCase):
+    def setUp(self):
+        self.root=tk.Tk()
+        self.root.withdraw()
+        self.gui=SettingsWindow(self.root)
+        self.root.update_idletasks()
+
+    def tearDown(self):
+        if self.root.winfo_exists():
+            self.gui.close()
+
+    def test_notebook_has_four_short_sections_and_fixed_footer(self):
+        self.assertEqual(
+            [self.gui.tabs.tab(page,'text') for page in self.gui.tabs.tabs()],
+            ['表示・時計','天気','乗換','外観・更新']
+        )
+        self.assertEqual(len(self.gui._tab_canvases),4)
+        self.assertEqual(self.gui.tabs.grid_info()['row'],1)
+        self.assertEqual(self.gui.root.geometry().split('x')[0],'800')
+        self.assertEqual(self.gui.root.geometry().split('x')[1].split('+')[0],'540')
+        # Save, weather API test, display start/stop, exit are NOT descendants
+        # of any notebook page and remain in the fixed root footer.
+        from tkinter import ttk
+        buttons=[w for w in self.root.winfo_children()
+                 if isinstance(w,ttk.Frame) and w.grid_info().get('row')==2]
+        self.assertEqual(len(buttons),1)
+        footer=buttons[0]
+        all_footer_children=list(footer.winfo_children())
+        self.assertTrue(any(isinstance(w,ttk.Frame) for w in all_footer_children))
+        commands=[w.cget('text') for row in all_footer_children
+                  if isinstance(row,ttk.Frame)
+                  for w in row.winfo_children() if isinstance(w,ttk.Button)]
+        self.assertEqual(commands,
+            ['設定を即時反映','天気APIテスト','表示開始','表示停止','終了'])
+
+    def test_every_tab_is_scrollable_and_independent(self):
+        pages=self.gui.tabs.tabs()
+        self.assertEqual(len(set(str(self.gui._tab_canvases[p]) for p in pages)),4)
+        for page in pages:
+            canvas=self.gui._tab_canvases[page]
+            self.assertEqual(str(canvas.master),page)
+            self.assertEqual(str(canvas.cget('yscrollcommand'))!='',True)
+            self.assertIsNotNone(canvas.find_all())
+
+    def test_all_settings_still_participate_in_single_save(self):
+        required={'port','show_seconds','clock_12h','ntp_server','ntp_sync_minutes',
+                  'clock_update_mode','weather_city','weather_latitude',
+                  'weather_longitude','weather_update_minutes','weather_provider',
+                  'weatherapi_key','train_source','ir_route','train_update_seconds',
+                  'train_count','google_maps_api_key','auto_update_check'}
+        self.assertTrue(required.issubset(self.gui.vars),required-set(self.gui.vars))
+        original=copy.deepcopy(self.gui.conf)
+        self.gui.vars['weather_city'].set('津幡町')
+        self.gui.vars['weather_latitude'].set('36.6693')
+        self.gui.vars['weather_longitude'].set('136.7288')
+        self.gui.vars['weatherapi_key'].set('LOCAL_TEST_NOT_REAL')
+        self.gui.vars['weather_provider'].set('WeatherAPI.com')
+        self.gui.vars['show_seconds'].set(False)
+        self.gui.vars['train_count'].set('2')
+        self.gui.vars['auto_update_check'].set(False)
+        updated=self.gui.read_form()
+        self.assertEqual(updated['weather_city'],'津幡町')
+        self.assertEqual(updated['weather_provider'],'weatherapi')
+        self.assertEqual(updated['weatherapi_key'],'LOCAL_TEST_NOT_REAL')
+        self.assertEqual(updated['train_count'],2)
+        self.assertFalse(updated['show_seconds'])
+        self.assertFalse(updated['auto_update_check'])
+        self.assertEqual(updated['text_styles'],original['text_styles'])
+        self.assertEqual(updated['panel_styles'],original['panel_styles'])
+        self.assertEqual(self.gui.conf,original) # changes stay staged until Save
+
+
+if __name__=='__main__':
+    unittest.main()
