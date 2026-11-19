@@ -46,7 +46,7 @@ class TestSettingsNotebook(unittest.TestCase):
                   if isinstance(row,ttk.Frame)
                   for w in row.winfo_children() if isinstance(w,ttk.Button)]
         self.assertEqual(commands,
-            ['設定を即時反映','天気APIテスト','表示開始','表示停止','終了'])
+            ['設定を即時反映','天気APIテスト','表示開始','表示停止','ディスプレイ再接続','終了'])
 
     def test_every_tab_is_scrollable_and_independent(self):
         pages=self.gui.tabs.tabs()
