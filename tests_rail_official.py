@@ -140,6 +140,41 @@ class OfficialRailStatusTests(unittest.TestCase):
         app.draw_rail_notice(b,conf,'IR：平常',600)
         self.assertEqual(a.tobytes(),b.tobytes())
 
+    def test_migrate_custom_train_layout_without_discarding_colors(self):
+        import tempfile
+        from pathlib import Path
+        old={
+            'layout_revision':390,
+            'port':'COM5',
+            'weatherapi_key':'USER_LOCAL_API_KEY',
+            'text_styles':{
+                'train_time_1':{'x':183,'y':83,'size':20,'color':'#AABBCC'},
+                'train_detail_3':{'y':257,'color':'#123456'},
+                'weather_wind':{'x':71,'size':12,'color':'#FEDCBA'},
+            },
+            'panel_styles':{'train_1':{'y':60,'h':69,'fill':'#142536'}},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'settings.json'
+            path.write_text(json.dumps(old),encoding='utf-8')
+            with patch.object(app,'SETTINGS',path):
+                migrated=app.load_settings()
+                self.assertEqual(migrated['layout_revision'],396)
+                self.assertEqual(migrated['port'],'COM5')
+                self.assertEqual(migrated['weatherapi_key'],'USER_LOCAL_API_KEY')
+                self.assertEqual(migrated['text_styles']['train_time_1']['y'],103)
+                self.assertEqual(migrated['text_styles']['train_time_1']['size'],20)
+                self.assertEqual(migrated['text_styles']['train_time_1']['color'],'#AABBCC')
+                self.assertEqual(migrated['text_styles']['train_detail_3']['y'],265)
+                self.assertEqual(migrated['text_styles']['weather_wind']['x'],74)
+                self.assertEqual(migrated['text_styles']['weather_wind']['color'],'#FEDCBA')
+                self.assertEqual(migrated['panel_styles']['train_1']['y'],79)
+                self.assertEqual(migrated['panel_styles']['train_1']['h'],64)
+                self.assertEqual(migrated['layout_backup_v395']['text_styles'],old['text_styles'])
+                app.save_settings(migrated)
+                again=app.load_settings()
+                self.assertEqual(again['text_styles'],migrated['text_styles'])
+
     def test_current_temperature_unit_is_one_celsius_symbol(self):
         now=datetime(2026,11,19,12,0,tzinfo=app.TZ)
         seen={}
