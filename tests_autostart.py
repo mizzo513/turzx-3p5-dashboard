@@ -36,7 +36,7 @@ class StartupTests(unittest.TestCase):
         self.assertEqual(callbacks,[])
 
     def test_old_engine_retry_then_new_engine(self):
-        win,started,callbacks=self.editor(runtime={'app_version':'3.9.2'})
+        win,started,callbacks=self.editor(runtime={'app_version':'3.9.3'})
         win._autostart_engine()
         self.assertEqual(started,[])
         self.assertEqual(callbacks[0][0],500)
