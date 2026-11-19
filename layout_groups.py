@@ -23,14 +23,19 @@ TIME_FIELDS=('train_time','train_kan_arr','train_kan_dep','train_arrive')
 # Japanese labels are displayed directly in the editor's group dropdown.
 # All groups are intentionally contained in one logical panel.
 GROUPS={
-    '天気｜見出し・天候・現在気温':
-        ('weather',('weather_city','weather_description','weather_temperature')),
+    '天気｜地域名・天候':
+        ('weather',('weather_city','weather_description')),
+    '天気｜現在気温（数値と単位）':
+        ('weather',('weather_temperature','weather_temperature_unit')),
     '天気｜項目名（5種）':
         ('weather',('weather_high_label','weather_low_label',
                     'weather_rain_label','weather_humidity_label','weather_wind_label')),
     '天気｜数値（5種）':
         ('weather',('weather_high','weather_low','weather_rain',
                     'weather_humidity','weather_wind')),
+    '天気｜単位（5種）':
+        ('weather',('weather_high_unit','weather_low_unit','weather_rain_unit',
+                    'weather_humidity_unit','weather_wind_unit')),
     '列車｜駅名（3本×4箇所）':('train',_keys(STATION_FIELDS)),
     '列車｜時刻（3本×4箇所）':('train',_keys(TIME_FIELDS)),
     '列車｜番号（3本）':('train',_keys(('train_index',))),
