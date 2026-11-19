@@ -64,7 +64,6 @@ class OfficialRailStatusTests(unittest.TestCase):
     def test_ir_normal_and_invalid_remain_distinct(self):
         self.assertEqual(official.parse_ir({'train_state':{'title':
             '現在、平常どおり運転しています。'}}).state,'normal')
-        self.assertEqual(official.parse_ir({'other':'something'}).state,'未確認'.replace('未確認','unknown')) if False else None
         self.assertEqual(official.parse_ir({'other':'something'}).state,'未確認')  # metadata unconfirmed
 
     def test_nanao_relevant_tsubata_tomorrow(self):
