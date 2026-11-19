@@ -72,7 +72,7 @@ class V39LayoutTests(unittest.TestCase):
             app.render_original(self.now,self.weather,self.train,self.conf)
         self.assertEqual(seen['weather_city'],'白山市')
         self.assertEqual(seen['weather_temperature'],'15')
-        self.assertEqual(seen['weather_temperature_unit'],'°')
+        self.assertEqual(seen['weather_temperature_unit'],'℃')
         self.assertFalse(any(key in seen for key in ('train_header','train_header_note')))
 
     def test_warning_suffix_is_not_rendered_for_3_minute_transfer(self):
@@ -106,7 +106,7 @@ class V39LayoutTests(unittest.TestCase):
             location.write_text(json.dumps(legacy),encoding='utf-8')
             with patch.object(app,'SETTINGS',location):
                 migrated=app.load_settings()
-                self.assertEqual(migrated['layout_revision'],390)
+                self.assertEqual(migrated['layout_revision'],396)
                 self.assertEqual(migrated['weather_city'],'津幡町')
                 self.assertEqual(migrated['port'],'COM11')
                 self.assertEqual(migrated['train_count'],2)
