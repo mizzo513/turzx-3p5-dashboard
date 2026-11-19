@@ -102,15 +102,15 @@ class TemperatureIndividualEditTests(unittest.TestCase):
         a=matching_group('weather_temperature')
         changed=adjust_group({}, {}, a, dx=-3, dsize=2)
         self.assertEqual(set(changed),{'weather_temperature'})
-        self.assertEqual(changed['weather_temperature']['size'],22)
-        self.assertEqual(props({'text_styles':changed},'weather_temperature_unit')['size'],13)
+        self.assertEqual(changed['weather_temperature']['size'],24)
+        self.assertEqual(props({'text_styles':changed},'weather_temperature_unit')['size'],14)
 
     def test_adjustment_to_unit_does_not_change_number(self):
         b=matching_group('weather_temperature_unit')
         changed=adjust_group({}, {}, b, dy=2, dsize=-2)
         self.assertEqual(set(changed),{'weather_temperature_unit'})
-        self.assertEqual(props({'text_styles':changed},'weather_temperature')['size'],20)
-        self.assertEqual(props({'text_styles':changed},'weather_temperature_unit')['size'],11)
+        self.assertEqual(props({'text_styles':changed},'weather_temperature')['size'],22)
+        self.assertEqual(props({'text_styles':changed},'weather_temperature_unit')['size'],12)
 
 
 if __name__=='__main__':
