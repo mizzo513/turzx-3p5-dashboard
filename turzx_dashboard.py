@@ -1266,18 +1266,9 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
             else:
                 rail_notice=RailNotice('運行情報：表示OFF')
 
-            # Sample the NTP/PC clock after data processing. Never derive time
-            # by counting screen refreshes or elapsed USB transfers.
+            # Sample the NTP/PC clock after fetching data. Timekeeping never
+            # depends on how many USB frames were sent.
             now=jp_now()
-            scrolling=notice_overflows(conf,rail_notice.text)
-            # Scroll updates are optional. Defer when near the next second,
-            # leaving room for a higher-priority clock packet.
-            if scrolling and tick>=next_marquee and now.microsecond<600000:
-                marquee_px+=16
-                next_marquee=tick+1.7
-            if not scrolling and marquee_px:
-                marquee_px=0
-            marquee_changed=(marquee_px!=previous_marquee_px)
             data_signature=(
                 weather.city,weather.temperature,weather.high,weather.low,weather.precip,
                 weather.humidity,weather.wind,weather.code,weather.error,
@@ -1292,6 +1283,21 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
             sec=now.strftime('%S') if conf.get('show_seconds',True) else ''
             hm_due=hm!=last_hm
             sec_due=sec!=last_seconds
+
+            scrolling=notice_overflows(conf,rail_notice.text)
+            if scrolling:
+                if marquee.started_at is None:
+                    marquee.reset(tick)
+                candidate=marquee.candidate(
+                    time.monotonic(),previous_marquee_px,
+                    clock_due=(hm_due or sec_due or changed or force_full),
+                    second_fraction=now.microsecond/1_000_000.0)
+                if candidate is not None:
+                    marquee_px=candidate
+            else:
+                marquee.disable()
+                marquee_px=0
+            marquee_changed=marquee_px!=previous_marquee_px
             redraw=changed or hm_due or sec_due or marquee_changed or force_full
 
             # Check PnP presence periodically, including while no frame changes.
@@ -1333,49 +1339,75 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                     next_retry=tick+5.0
 
             did_update=False
+            notice_sent=False
             if no_usb and redraw:
-                frame=render_physical(now,weather,train,conf,
-                                      rail_notice=rail_notice,marquee_px=marquee_px)
-                frame.save(PREVIEW)
+                # The preview follows exactly the same 5 fps scheduling.
+                base_logical=render_original(
+                    now,weather,train,conf,rail_notice=rail_notice,
+                    skip_rail_notice=True)
+                picture=base_logical.copy()
+                draw_rail_notice(picture,conf,rail_notice.text,marquee_px)
+                picture.transpose(Image.Transpose.ROTATE_180).save(PREVIEW)
                 force_full=False
                 did_update=True
+                notice_sent=True
             elif device is not None and redraw:
-                # Avoid a full 480x320 render on every 50 ms idle loop.
-                frame=render_physical(now,weather,train,conf,
-                                      rail_notice=rail_notice,marquee_px=marquee_px)
+                # Rebuild the static dashboard at most once per clock second.
+                # Scroll-only refreshes use a cached background and compose
+                # only the tiny notice rectangle, not the entire dashboard.
+                if base_logical is None or changed or hm_due or sec_due or force_full:
+                    base_logical=render_original(
+                        now,weather,train,conf,rail_notice=rail_notice,
+                        skip_rail_notice=True)
                 transfer_start=time.monotonic()
                 kind='clock'
                 try:
                     if force_full or changed:
                         kind='full'
-                        send_bitmap(device,frame,0,0)
+                        picture=base_logical.copy()
+                        draw_rail_notice(picture,conf,rail_notice.text,marquee_px)
+                        send_bitmap(device,picture.transpose(Image.Transpose.ROTATE_180),0,0)
+                        notice_sent=True
                         logger.info('Full frame sent (%s; weather=%s)',train.status,weather.error or 'OK')
-                    elif hm_due:
-                        # Minute rollover no longer blocks the following
-                        # second on a complete 480x320 bitmap transmission.
-                        kind='clock-minute'
-                        header=clock_label_region(conf,now)
-                        if conf.get('clock_update_mode','compact')=='safe_strip' and header[3]<=CLOCK_STRIP:
-                            send_bitmap(device,frame.crop((0,H-CLOCK_STRIP,W,H)),0,H-CLOCK_STRIP)
-                        else:
-                            send_rotated_box(device,frame,header)
-                        if marquee_changed:
-                            send_rotated_box(device,frame,notice_region(conf))
-                    else:
-                        # Clock is sent FIRST, before optional marquee motion.
-                        if sec_due and conf.get('show_seconds',True):
+                    elif hm_due or sec_due:
+                        # The clock ALWAYS takes priority over optional
+                        # scrolling; never transfer a marquee frame first.
+                        picture=base_logical.copy()
+                        draw_rail_notice(picture,conf,rail_notice.text,marquee_px)
+                        physical=picture.transpose(Image.Transpose.ROTATE_180)
+                        if hm_due:
+                            kind='clock-minute'
+                            area=clock_label_region(conf,now)
+                            if conf.get('clock_update_mode','compact')=='safe_strip' and area[3]<=CLOCK_STRIP:
+                                send_bitmap(device,physical.crop((0,H-CLOCK_STRIP,W,H)),0,H-CLOCK_STRIP)
+                            else:
+                                send_rotated_box(device,physical,area)
+                        elif conf.get('show_seconds',True):
+                            kind='clock-second'
                             if conf.get('clock_update_mode','compact')=='safe_strip':
                                 if seconds_region(conf,now)[3]>CLOCK_STRIP:
-                                    send_rotated_box(device,frame,clock_label_region(conf,now))
+                                    send_rotated_box(device,physical,clock_label_region(conf,now))
                                 else:
-                                    send_bitmap(device,frame.crop((0,H-CLOCK_STRIP,W,H)),0,H-CLOCK_STRIP)
+                                    send_bitmap(device,physical.crop((0,H-CLOCK_STRIP,W,H)),0,H-CLOCK_STRIP)
                             else:
-                                send_rotated_box(device,frame,seconds_region(conf,now))
-                        if marquee_changed:
-                            kind='clock+marquee' if sec_due else 'marquee'
-                            send_rotated_box(device,frame,notice_region(conf))
-                    last_transfer_ms=round((time.monotonic()-transfer_start)*1000,1)
+                                send_rotated_box(device,physical,seconds_region(conf,now))
+                    elif marquee_changed:
+                        kind='marquee'
+                        patch,x,y=render_notice_patch(
+                            base_logical,conf,rail_notice.text,marquee_px)
+                        send_bitmap(device,patch,x,y)
+                        notice_sent=True
+
+                    duration=time.monotonic()-transfer_start
+                    last_transfer_ms=round(duration*1000,1)
                     last_transfer_kind=kind
+                    if kind=='marquee':
+                        marquee.record_transfer(duration)
+                        scroll_transfer_ms=last_transfer_ms
+                    if hm_due or sec_due:
+                        # Approximate boundary-to-send-complete timing; this
+                        # is not a measurement of LCD physical refresh latency.
+                        clock_display_lag_ms=round(now.microsecond/1000.0+duration*1000,1)
                     usb_error=''
                     force_full=False
                     did_update=True
@@ -1391,8 +1423,8 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
             # Do not mark failed transfers as rendered; a reconnect must
             # reinitialize the LCD and send a fresh complete image.
             if did_update:
-                previous_marquee_px=marquee_px
-                prev_frame=frame
+                if notice_sent:
+                    previous_marquee_px=marquee_px
                 prev_data_signature=data_signature
                 last_hm=hm
                 last_seconds=sec
@@ -1403,6 +1435,11 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                                     usb_error=usb_error,
                                     last_transfer_ms=last_transfer_ms,
                                     last_transfer_kind=last_transfer_kind,
+                                    scroll_transfer_ms=scroll_transfer_ms,
+                                    scroll_target_fps=round(1.0/marquee.interval,2),
+                                    scroll_sent_frames=marquee.sent_frames,
+                                    scroll_skipped_frames=marquee.skipped_frames,
+                                    clock_packet_lag_ms=clock_display_lag_ms,
                                     preview_mode=no_usb,
                                     port=port_name,
                                     clock=hm+(':'+sec if sec else ''),
@@ -1417,7 +1454,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                                     clock_update_mode=conf.get('clock_update_mode','compact'),
                                     **CLOCK.state())
                 last_status=tick
-            time.sleep(.05)
+            time.sleep(.02)  # <=20ms polling jitter when USB is idle
     finally:
         if device:
             try:device.close()
