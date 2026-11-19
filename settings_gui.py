@@ -39,6 +39,10 @@ class SettingsWindow:
         titlebar.grid(row=0,column=0,sticky='ew')
         ttk.Label(titlebar,text='TURZX 3.5 設定  V'+APP_VERSION,
                   font=('Yu Gothic UI',13,'bold')).pack(side='left')
+        # Persistent update control: accessible from every settings tab.
+        self.header_update_button=ttk.Button(
+            titlebar,text='更新確認',command=self.check_github_update)
+        self.header_update_button.pack(side='left',padx=(12,0))
         ttk.Label(titlebar,text='480×320 / 画像180度回転',
                   foreground='#52677c').pack(side='right')
         self.tabs=ttk.Notebook(root)
@@ -86,8 +90,10 @@ class SettingsWindow:
         ttk.Label(main,text='更新・メンテナンス',font=('Yu Gothic UI',11,'bold')).grid(
             row=r,column=0,columnspan=3,sticky='w',pady=(0,8));r+=1
         update_row=ttk.Frame(main);update_row.grid(row=r,column=0,columnspan=3,sticky='w',pady=(4,6));r+=1
-        ttk.Button(update_row,text='GitHubで最新版を確認',command=self.check_github_update).pack(side='left',padx=(0,8))
         ttk.Button(update_row,text='更新ZIPを手動で選択',command=self.open_update).pack(side='left')
+        ttk.Label(main,text='最新版の確認は画面上部「更新確認」からいつでも実行できます。',
+                  foreground='#5c7184',wraplength=610).grid(
+                      row=r,column=0,columnspan=3,sticky='w',pady=(0,4));r+=1
         self.vars['auto_update_check']=tk.BooleanVar(value=bool(self.conf.get('auto_update_check',True)))
         ttk.Checkbutton(main,text='設定画面を開いたときに最新版を自動確認（更新前に確認あり）',variable=self.vars['auto_update_check']).grid(row=r,column=0,columnspan=3,sticky='w');r+=1
         main=weather_tab
