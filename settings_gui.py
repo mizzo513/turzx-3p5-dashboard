@@ -4,6 +4,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import math
 import os
 import time
 import subprocess
@@ -114,6 +115,9 @@ class SettingsWindow:
         r+=1
         self.paired_fields(main,r,('緯度','weather_latitude'),('経度','weather_longitude'));r+=1
         self.field(main,'天気更新間隔（分）','weather_update_minutes',r);r+=1
+        ttk.Label(main,text='現在天候は総合判定：気象庁降水ナウキャスト → 近隣アメダス → Open-Meteo。'
+                            '実況が利用できなければ既存の天候判定へ戻します（約5分ごと）。',
+                  foreground='#21709c',wraplength=610).grid(row=r,column=0,columnspan=3,sticky='w',pady=(5,6));r+=1
         main=train_tab
         r=0
         ttk.Label(main,text='列車：加賀笠間 → 金沢 → 津幡',
@@ -135,6 +139,9 @@ class SettingsWindow:
                         variable=self.vars['rail_status_enabled']).grid(
                             row=r,column=0,columnspan=3,sticky='w',pady=(0,5));r+=1
         self.field(main,'運行情報の確認間隔（分）','rail_status_update_minutes',r,'5');r+=1
+        self.field(main,'横スクロール速度（px/秒）','rail_scroll_speed_px_s',r,'9.4');r+=1
+        ttk.Label(main,text='0：静止、9.4：従来の移動速度、最大60px/秒。画面更新は最大5fpsで自動調整します。',
+                  foreground='#5c7184',wraplength=610).grid(row=r,column=0,columnspan=3,sticky='w',pady=(0,5));r+=1
         links=ttk.Frame(main)
         links.grid(row=r,column=0,columnspan=3,sticky='w',pady=(0,6));r+=1
         ttk.Button(links,text='IR公式運行情報',
@@ -268,6 +275,12 @@ class SettingsWindow:
         conf['rail_status_update_minutes']=int(conf.get('rail_status_update_minutes',5))
         if not 5<=conf['rail_status_update_minutes']<=60:
             raise ValueError('運行情報の確認間隔は5〜60分にしてください。')
+        try:
+            conf['rail_scroll_speed_px_s']=float(conf.get('rail_scroll_speed_px_s',9.4))
+        except (ValueError,TypeError):
+            raise ValueError('横スクロール速度は数値で指定してください。') from None
+        if not math.isfinite(conf['rail_scroll_speed_px_s']) or not 0<=conf['rail_scroll_speed_px_s']<=60:
+            raise ValueError('横スクロール速度は0～60px/秒で指定してください。')
         conf['train_update_seconds']=int(conf['train_update_seconds'])
         choice=conf.get('ir_route','加賀笠間→金沢→津幡')
         mapping={'加賀笠間→金沢→津幡':'via_kanazawa','金沢→津幡':'kanazawa_tsubata'}
