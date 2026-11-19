@@ -9,6 +9,13 @@ jobs:
   probe:
     runs-on: windows-latest
     steps:
+    - name: Checkout official text parser
+      uses: actions/checkout@v4
+    - name: Test parsed route-level notice against current public sources
+      shell: pwsh
+      run: |
+        $env:PYTHONIOENCODING = "utf-8"
+        python -X utf8 -c "from rail_official_status import fetch_official_rail_notice; d=fetch_official_rail_notice(); print('IR_STATE=', d.ir.state, 'NANAO_STATE=', d.nanao.state, 'DISPLAY=', d.text)"
     - name: Check official public page availability
       shell: pwsh
       run: |
