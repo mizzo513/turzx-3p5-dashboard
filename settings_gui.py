@@ -14,7 +14,7 @@ from tkinter import ttk, messagebox, filedialog
 from pathlib import Path
 from turzx_dashboard import CITIES, CSV_PATH, JSON_PATH, IR_SCHEDULE_PATH, ROOT, resolve_ir_schedule, OFFICIAL_TIMETABLE, load_settings, save_settings, fetch_weather, load_schedule_csv, train_diagnostics, render_original, jp_now, Weather, choose_trains
 import webbrowser
-from runtime_ipc import get_runtime_status, request_stop
+from runtime_ipc import get_runtime_status, request_stop, request_reconnect
 from text_layout import validate_styles
 from panel_layout import validate_panels
 from version_info import APP_VERSION
@@ -168,6 +168,7 @@ class SettingsWindow:
         ttk.Button(row,text='天気APIテスト',command=self.test_weather).pack(side='left',padx=(0,7))
         ttk.Button(row,text='表示開始',command=self.start).pack(side='left',padx=(0,7))
         ttk.Button(row,text='表示停止',command=self.stop).pack(side='left',padx=(0,7))
+        ttk.Button(row,text='ディスプレイ再接続',command=self.reconnect).pack(side='left',padx=(0,7))
         ttk.Button(row,text='終了',command=self.close).pack(side='right')
         root.protocol('WM_DELETE_WINDOW',self.close)
         self.root.after(800,self.poll_runtime)
@@ -448,7 +449,10 @@ class SettingsWindow:
             self.status.set('設定反映完了｜'+state.get('clock','--:--')+'｜時刻 '+state.get('time_source','--')+'｜天気 '+state.get('weather_city','')+'｜列車 '+state.get('train_status',''))
             self.await_hash=None
         elif not self.await_hash and state:
-            status_msg='動作中 '+state.get('clock','')+'｜時刻 '+state.get('time_source','同期中')+'｜'+('実機接続' if state.get('connected') else '接続待ち')+'｜'+state.get('port','')
+            usb_state='実機接続' if state.get('connected') else '接続待ち'
+            if not state.get('connected') and state.get('usb_error'):
+                usb_state+=' ('+str(state['usb_error'])[:110]+')'
+            status_msg='動作中 '+state.get('clock','')+'｜時刻 '+state.get('time_source','同期中')+'｜'+usb_state+'｜'+state.get('port','')
             if self.last_message!=status_msg:
                 self.last_message=status_msg
                 self.status.set(status_msg)
@@ -500,6 +504,16 @@ class SettingsWindow:
                 out.close();err.close()
             self.status.set('非表示で起動しました。接続状況を確認しています…')
         except Exception as exc:messagebox.showerror('起動エラー',str(exc))
+
+    def reconnect(self):
+        """Reconnect the serial link without stopping the clock/rail engine."""
+        if not self.runtime_state():
+            self.status.set('表示アプリが停止しています。先に「表示開始」を押してください。')
+            return
+        if request_reconnect():
+            self.status.set('ディスプレイ再接続を要求しました。USB初期化と全画面再送信を行います。')
+        else:
+            self.status.set('再接続要求を送れませんでした。表示アプリの起動状態を確認してください。')
 
     def stop(self):
         if not self.runtime_state():
