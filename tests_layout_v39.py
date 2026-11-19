@@ -71,7 +71,8 @@ class V39LayoutTests(unittest.TestCase):
         with patch.object(app,'style_label',side_effect=spy):
             app.render_original(self.now,self.weather,self.train,self.conf)
         self.assertEqual(seen['weather_city'],'白山市')
-        self.assertEqual(seen['weather_temperature'],'15°')
+        self.assertEqual(seen['weather_temperature'],'15')
+        self.assertEqual(seen['weather_temperature_unit'],'°')
         self.assertFalse(any(key in seen for key in ('train_header','train_header_note')))
 
     def test_warning_suffix_is_not_rendered_for_3_minute_transfer(self):
