@@ -237,7 +237,8 @@ def _read(opener,url):
         raw=response.read(MAX_BODY+1)
         if len(raw)>MAX_BODY:
             raise ValueError('Rail operation page exceeds size limit')
-        charset=response.headers.get_content_charset() if hasattr(response,'headers') else None
+        headers=getattr(response,'headers',None)
+        charset=(getattr(headers,'get_content_charset',lambda:None)() if headers is not None else None)
         return raw.decode(charset or 'utf-8','replace')
 
 
