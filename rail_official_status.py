@@ -139,7 +139,7 @@ def parse_ir(data):
 
 NANAO_RE=re.compile(r'\bNanao\s+Line\b',re.I)
 OTHER_LINE_RE=re.compile(r'\b(?:Hokuriku|Obama|Himi|Takayama|Oito|Johanna|Etsumi-Hoku|Kuzuryu)\s+Line\b',re.I)
-NORMAL_RE=re.compile(r'\b(?:Normal\s+(?:Service|Operation)|Operating\s+Normally|No\s+(?:Disruptions|Delays))\b',re.I)
+NORMAL_RE=re.compile(r'\b(?:Normal\s+(?:Service|Operation|Operations)|Operating\s+Normally|Running\s+Normally|No\s+(?:Disruptions|Delays))\b',re.I)
 IMPACT_RE=re.compile(r'(?i)Delay|Suspension|Suspended|Cancellation|Cancelled|Cancell?ed|Disruption|Resum|Storm|Strong Wind')
 TRANSLATED={'Tsubata':'津幡','Kanazawa':'金沢','Wakuraonsen':'和倉温泉',
             'Hakui':'羽咋','Nanao':'七尾','Takamatsu':'高松','Nakanoto':'中能登'}
