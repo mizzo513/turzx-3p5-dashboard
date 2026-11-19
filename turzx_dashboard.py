@@ -1314,6 +1314,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                 frame=render_physical(now,weather,train,conf,
                                       rail_notice=rail_notice,marquee_px=marquee_px)
                 frame.save(PREVIEW)
+                force_full=False
                 did_update=True
             elif device is not None and redraw:
                 # Avoid a full 480x320 render on every 50 ms idle loop.
