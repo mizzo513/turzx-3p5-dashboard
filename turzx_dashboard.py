@@ -1243,78 +1243,142 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
             else:
                 rail_notice=RailNotice('運行情報：表示OFF')
 
+            # Sample the NTP/PC clock after data processing. Never derive time
+            # by counting screen refreshes or elapsed USB transfers.
+            now=jp_now()
             scrolling=notice_overflows(conf,rail_notice.text)
-            if scrolling and tick>=next_marquee:
+            # Scroll updates are optional. Defer when near the next second,
+            # leaving room for a higher-priority clock packet.
+            if scrolling and tick>=next_marquee and now.microsecond<600000:
                 marquee_px+=16
                 next_marquee=tick+1.7
             if not scrolling and marquee_px:
                 marquee_px=0
             marquee_changed=(marquee_px!=previous_marquee_px)
-            frame=render_physical(now,weather,train,conf,
-                                  rail_notice=rail_notice,marquee_px=marquee_px)
             data_signature=(
                 weather.city,weather.temperature,weather.high,weather.low,weather.precip,
                 weather.humidity,weather.wind,weather.code,weather.error,
                 weather.provider,weather.condition_text,weather.raw_condition_code,
                 weather.fetched.strftime('%H:%M') if weather.fetched else None,
-                train.status, rail_notice.text, tuple((t.depart.isoformat(),t.arrive.isoformat(),t.line,t.platform) for t in train.trains),
+                train.status,rail_notice.text,
+                tuple((t.depart.isoformat(),t.arrive.isoformat(),t.line,t.platform) for t in train.trains),
                 now.date()
             )
-            changed=prev_frame is None or data_signature!=prev_data_signature
+            changed=prev_data_signature is None or data_signature!=prev_data_signature
             hm=clock_minute_key(now,conf)
             sec=now.strftime('%S') if conf.get('show_seconds',True) else ''
             hm_due=hm!=last_hm
             sec_due=sec!=last_seconds
-            if no_usb:
-                if changed or hm_due or sec_due or marquee_changed:
-                    frame.save(PREVIEW)
-            else:
-                if device is None and tick>=next_retry:
-                    try:
-                        device=open_display(port_name)
-                        write_all(device,orientation_packet()); time.sleep(.12)
-                        logger.info('Connected to %s',port_name)
-                        changed=True
-                    except Exception as exc:
-                        logger.error('LCD disconnected: %s',exc)
-                        device=None;next_retry=tick+5
-                if device is not None and (changed or hm_due or sec_due or marquee_changed):
-                    try:
-                        if changed:
-                            send_bitmap(device,frame,0,0)
-                            logger.info('Full frame sent (%s; weather=%s)',train.status,weather.error or 'OK')
-                            time.sleep(.35)
-                        elif conf.get('clock_update_mode','compact')=='safe_strip':
-                            # Safe full frame if seconds were moved outside the original header.
-                            if seconds_region(conf,now)[3] > CLOCK_STRIP:
-                                send_bitmap(device,frame,0,0)
-                            else:
-                                strip=frame.crop((0,H-CLOCK_STRIP,W,H))
-                                send_bitmap(device,strip,0,H-CLOCK_STRIP)
-                        elif hm_due:
-                            # Once per minute, refresh the whole frame to support moved clock labels.
-                            send_bitmap(device,frame,0,0)
-                        else:
-                            if marquee_changed:
-                                send_rotated_box(device,frame,notice_region(conf))
-                            if sec_due and conf.get('show_seconds',True):
-                                send_rotated_box(device,frame,seconds_region(conf,now))
-                    except Exception as exc:
-                        logger.error('USB transfer failed: %s; retry in 5s',exc)
+            redraw=changed or hm_due or sec_due or marquee_changed or force_full
+
+            # Check PnP presence periodically, including while no frame changes.
+            # Never disable/re-enable Windows devices without user permission.
+            if not no_usb and device is not None and tick-last_usb_check>=1.0:
+                last_usb_check=tick
+                try:
+                    from serial.tools import list_ports
+                    attached=any(p.device.upper()==device.port.upper()
+                                 and p.vid==VID and p.pid==PID
+                                 for p in list_ports.comports())
+                    if not attached:
+                        raise OSError('USBシリアルデバイスが切断されました')
+                except Exception as exc:
+                    usb_error=str(exc)
+                    logger.warning('USB disconnected: %s',exc)
+                    try:device.close()
+                    except Exception:pass
+                    device=None
+                    force_full=True
+                    next_retry=tick+1.0
+
+            if not no_usb and device is None and tick>=next_retry:
+                try:
+                    device=open_display(port_name)
+                    write_all(device,orientation_packet())
+                    time.sleep(.12)  # tested Rev A orientation setup
+                    last_usb_check=tick
+                    usb_error=''
+                    force_full=True
+                    logger.info('Connected and initialized: %s',device.port)
+                except Exception as exc:
+                    usb_error=f'{type(exc).__name__}: {exc}'
+                    logger.warning('LCD connection unavailable: %s',usb_error)
+                    if device is not None:
                         try:device.close()
                         except Exception:pass
-                        device=None;next_retry=tick+5
-                        changed=True
+                    device=None
+                    next_retry=tick+5.0
 
-            if changed or hm_due or sec_due or marquee_changed:
+            did_update=False
+            if no_usb and redraw:
+                frame=render_physical(now,weather,train,conf,
+                                      rail_notice=rail_notice,marquee_px=marquee_px)
+                frame.save(PREVIEW)
+                did_update=True
+            elif device is not None and redraw:
+                # Avoid a full 480x320 render on every 50 ms idle loop.
+                frame=render_physical(now,weather,train,conf,
+                                      rail_notice=rail_notice,marquee_px=marquee_px)
+                transfer_start=time.monotonic()
+                kind='clock'
+                try:
+                    if force_full or changed:
+                        kind='full'
+                        send_bitmap(device,frame,0,0)
+                        logger.info('Full frame sent (%s; weather=%s)',train.status,weather.error or 'OK')
+                    elif hm_due:
+                        # Minute rollover no longer blocks the following
+                        # second on a complete 480x320 bitmap transmission.
+                        kind='clock-minute'
+                        header=clock_label_region(conf,now)
+                        if conf.get('clock_update_mode','compact')=='safe_strip' and header[3]<=CLOCK_STRIP:
+                            send_bitmap(device,frame.crop((0,H-CLOCK_STRIP,W,H)),0,H-CLOCK_STRIP)
+                        else:
+                            send_rotated_box(device,frame,header)
+                        if marquee_changed:
+                            send_rotated_box(device,frame,notice_region(conf))
+                    else:
+                        # Clock is sent FIRST, before optional marquee motion.
+                        if sec_due and conf.get('show_seconds',True):
+                            if conf.get('clock_update_mode','compact')=='safe_strip':
+                                if seconds_region(conf,now)[3]>CLOCK_STRIP:
+                                    send_rotated_box(device,frame,clock_label_region(conf,now))
+                                else:
+                                    send_bitmap(device,frame.crop((0,H-CLOCK_STRIP,W,H)),0,H-CLOCK_STRIP)
+                            else:
+                                send_rotated_box(device,frame,seconds_region(conf,now))
+                        if marquee_changed:
+                            kind='clock+marquee' if sec_due else 'marquee'
+                            send_rotated_box(device,frame,notice_region(conf))
+                    last_transfer_ms=round((time.monotonic()-transfer_start)*1000,1)
+                    last_transfer_kind=kind
+                    usb_error=''
+                    force_full=False
+                    did_update=True
+                except Exception as exc:
+                    usb_error=f'{type(exc).__name__}: {exc}'
+                    logger.warning('USB transfer failed: %s; retry in 5s',usb_error)
+                    try:device.close()
+                    except Exception:pass
+                    device=None
+                    next_retry=time.monotonic()+5.0
+                    force_full=True
+
+            # Do not mark failed transfers as rendered; a reconnect must
+            # reinitialize the LCD and send a fresh complete image.
+            if did_update:
                 previous_marquee_px=marquee_px
                 prev_frame=frame
                 prev_data_signature=data_signature
-                last_hm=hm; last_seconds=sec
+                last_hm=hm
+                last_seconds=sec
                 previous_clock=hm+sec
             if tick-last_status>1.0:
                 save_runtime_status(app_version=APP_VERSION,
                                     connected=device is not None if not no_usb else False,
+                                    usb_error=usb_error,
+                                    last_transfer_ms=last_transfer_ms,
+                                    last_transfer_kind=last_transfer_kind,
                                     preview_mode=no_usb,
                                     port=port_name,
                                     clock=hm+(':'+sec if sec else ''),
