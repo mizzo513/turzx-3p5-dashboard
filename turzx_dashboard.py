@@ -78,11 +78,12 @@ DEFAULTS = {
     'weather_latitude': 36.5144,
     'weather_longitude': 136.5656,
     'weather_update_minutes': 10,
+    'settings_color_preset': '標準ブルー', # Settings GUI only; not the LCD theme
     'auto_start_display': True, # launch USB engine automatically when GUI opens
     'weather_provider': 'weatherapi', # weatherapi or openmeteo
     'weatherapi_key': '', # local settings only, never bundled into public releases
     'train_source': 'ir_schedule',  # bundled IR timetable, csv, json, or google_transit
-    'ir_route': 'via_kanazawa',  # via_kanazawa or kanazawa_tsubata; old configs migrate automatically
+    'ir_route': 'via_kanazawa',  # via_kanazawa, kanazawa_tsubata, or kaga_kanazawa
     'train_update_seconds': 30,
     'rail_status_enabled': True,
     'rail_status_update_minutes': 5, # request public IR/JR sources at most every 5 min
@@ -490,9 +491,12 @@ def resolve_ir_schedule(path=None):
 
 def train_diagnostics(now, conf):
     """Offline, no COM access; expose exact data source and planned departures."""
-    via=conf.get('train_source')=='ir_schedule' and conf.get('ir_route','via_kanazawa')=='via_kanazawa'
+    ir_route=conf.get('ir_route','via_kanazawa')
+    via=conf.get('train_source')=='ir_schedule' and ir_route=='via_kanazawa'
+    first_only=conf.get('train_source')=='ir_schedule' and ir_route=='kaga_kanazawa'
     result={'engine_version':APP_VERSION,'train_source':conf.get('train_source'),
-            'train_from':'加賀笠間' if via else conf.get('train_from'), 'train_to':conf.get('train_to'),
+            'train_from':'加賀笠間' if via or first_only else conf.get('train_from'),
+            'train_to':'金沢' if first_only else conf.get('train_to'),
             'ir_route':conf.get('ir_route','via_kanazawa'),
             'settings_file':str(SETTINGS)}
     if conf.get('train_source')=='ir_schedule':
@@ -523,9 +527,9 @@ def upcoming_from_ir_schedule(now, conf, path=None):
     """
     import rail_core
     route=conf.get('ir_route','via_kanazawa')
-    if route not in ('via_kanazawa','kanazawa_tsubata'):
+    if route not in ('via_kanazawa','kanazawa_tsubata','kaga_kanazawa'):
         return TrainState([], '経路設定が不正', 'ir_schedule',error='Unsupported IR route')
-    if conf.get('train_to')!='津幡':
+    if route!='kaga_kanazawa' and conf.get('train_to')!='津幡':
         return TrainState([], '到着駅は津幡のみ対応', 'ir_schedule',error='Unsupported destination')
     if route=='kanazawa_tsubata' and conf.get('train_from')!='金沢':
         return TrainState([], '対象区間は金沢→津幡', 'ir_schedule',error='Unsupported stations')
@@ -533,6 +537,38 @@ def upcoming_from_ir_schedule(now, conf, path=None):
         doc,selected_schedule=resolve_ir_schedule(path)
     except Exception as exc:
         return TrainState([], '時刻表未配置・読込失敗', 'ir_schedule',error=str(exc))
+    # The first leg is a complete independent timetable. Do not require or
+    # invent a connection to 津幡 for the 加賀笠間→金沢-only selection.
+    if route=='kaga_kanazawa':
+        result=[]
+        for delta in (-1,0,1,2):
+            day=now.date()+timedelta(days=delta)
+            for row in doc['first']:
+                if not rail_core.active_rule(row[3],day):
+                    continue
+                dep=as_datetime(day,row[0])
+                arr=as_datetime(day,row[1])
+                if arr<dep:
+                    arr+=timedelta(days=1)
+                duration=(arr-dep).total_seconds()/60
+                if dep<now or not 1<=duration<=180:
+                    continue
+                platform=rail_core.get_platform({},'first',row,'arr')
+                result.append(Train(
+                    dep,arr,str(row[2]).strip(),platform,'収録時刻表',
+                    '加賀笠間','金沢'))
+        result.sort(key=lambda t:(t.depart,t.arrive,t.line))
+        unique=[]
+        seen=set()
+        for item in result:
+            key=(item.depart,item.arrive,item.line)
+            if key not in seen:
+                seen.add(key)
+                unique.append(item)
+        return TrainState(unique[:int(conf['train_count'])],
+                          '加賀笠間→金沢 時刻表(予定)',
+                          'ir_schedule',jp_now())
+
     # Both legs of the user-provided timetable are matched by rail_core;
     # no inferred departures or arrival times.
     if route=='via_kanazawa':
@@ -1074,7 +1110,7 @@ def read_live_settings():
     if not isinstance(fresh.get('ntp_server'),str) or not fresh['ntp_server'].strip():
         raise ValueError('NTPサーバー名が未設定です')
     fresh['train_count']=max(1,min(3,int(fresh['train_count'])))
-    if fresh.get('ir_route') not in ('via_kanazawa','kanazawa_tsubata'): fresh['ir_route']='via_kanazawa'
+    if fresh.get('ir_route') not in ('via_kanazawa','kanazawa_tsubata','kaga_kanazawa'): fresh['ir_route']='via_kanazawa'
     fresh['train_update_seconds']=max(10,int(fresh['train_update_seconds']))
     fresh['weather_update_minutes']=max(5,int(fresh['weather_update_minutes']))
     fresh['rail_status_update_minutes']=max(5,min(60,int(fresh.get('rail_status_update_minutes',5))))
