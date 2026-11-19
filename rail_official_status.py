@@ -85,15 +85,21 @@ def _short(text, limit=90):
 
 
 def affects_ir_route(message):
-    """Only report a specific impact when a segment touches 加賀笠間〜津幡."""
-    if re.search(r'全線|全区間|全列車|[ＩI]Ｒ?いしかわ鉄道線(?:で|は|全体)|IRいしかわ鉄道線(?:で|は|全体)',message):
+    """Report only a named overlapping segment or an explicitly system-wide IR notice."""
+    segments=RANGE_PATTERN.findall(message)
+    if segments:
+        for a,b in segments:
+            i,j=ROUTE.index(a),ROUTE.index(b)
+            if max(min(i,j),ROUTE_START)<=min(max(i,j),ROUTE_END):
+                return True
+        return False
+    if re.search(r'全線|全区間|全列車|全域',message):
         return True
-    for a,b in RANGE_PATTERN.findall(message):
-        i,j=ROUTE.index(a),ROUTE.index(b)
-        if max(min(i,j),ROUTE_START)<=min(max(i,j),ROUTE_END):
-            return True
-    # Explicitly named stations within the user's route are direct evidence.
-    return any(name in message for name in ROUTE[ROUTE_START:ROUTE_END+1])
+    if any(name in message for name in ROUTE[ROUTE_START:ROUTE_END+1]):
+        return True
+    # The official homepage sometimes issues a notice covering the entire
+    # operator with "ＩＲいしかわ鉄道線及びＪＲ七尾線では".
+    return 'ＩＲいしかわ鉄道線' in message or 'IRいしかわ鉄道線' in message
 
 
 def parse_ir(data):
