@@ -12,6 +12,7 @@ import sys
 import threading
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
+from tkinter import font as tkfont
 from pathlib import Path
 from turzx_dashboard import CITIES, CSV_PATH, JSON_PATH, IR_SCHEDULE_PATH, ROOT, resolve_ir_schedule, OFFICIAL_TIMETABLE, load_settings, save_settings, fetch_weather, load_schedule_csv, train_diagnostics, render_original, jp_now, Weather, choose_trains
 import webbrowser
@@ -45,13 +46,15 @@ class SettingsWindow:
         self.header_update_button.pack(side='left',padx=(12,0))
         ttk.Label(titlebar,text='480×320 / 画像180度回転',
                   foreground='#52677c').pack(side='right')
-        self.tabs=ttk.Notebook(root)
+        self._configure_tab_appearance()
+        self.tabs=ttk.Notebook(root,style='TURZX.TNotebook')
         self.tabs.grid(row=1,column=0,sticky='nsew',padx=10,pady=(1,4))
         self._tab_canvases={}
         display_tab=self._create_settings_tab('表示・時計')
         weather_tab=self._create_settings_tab('天気')
         train_tab=self._create_settings_tab('乗換')
         manage_tab=self._create_settings_tab('外観・更新')
+        self._equalize_tab_widths()
         root.bind('<MouseWheel>',self._on_tab_wheel)
         self.vars={}
         main=display_tab
@@ -189,6 +192,50 @@ class SettingsWindow:
             self.root.after(1800,lambda:self.check_github_update(silent=True))
         if self.conf.get('auto_start_display',True):
             self.root.after(350,self._autostart_engine)
+
+    def _configure_tab_appearance(self):
+        """Readable tab palette on Windows, including inactive tabs.
+
+        Native Vista themed tabs may ignore ttk background colors; the
+        standard Clam theme honors foreground/background mappings. Apply it
+        only to this GUI's Tk interpreter (not to the LCD framebuffer).
+        """
+        style=ttk.Style(self.root)
+        if 'clam' in style.theme_names():
+            style.theme_use('clam')
+        self._tab_font=tkfont.Font(self.root,family='Yu Gothic UI',size=10,weight='bold')
+        style.configure('TURZX.TNotebook',
+                        background='#E3EBF2',borderwidth=1,
+                        tabmargins=(3,4,3,0))
+        style.configure('TURZX.TNotebook.Tab',
+                        background='#CEDAE5',foreground='#23394F',
+                        font=self._tab_font,relief='raised',
+                        borderwidth=1,padding=(14,8))
+        style.map('TURZX.TNotebook.Tab',
+                  background=[('selected','#17638D'),
+                              ('active','#AACFE3'),
+                              ('!selected','#CEDAE5')],
+                  foreground=[('selected','#FFFFFF'),
+                              ('active','#123F58'),
+                              ('!selected','#23394F')],
+                  bordercolor=[('selected','#0E4B6B'),
+                               ('!selected','#7997AC')])
+
+    def _equalize_tab_widths(self):
+        """Use equal pixel widths, regardless of the Japanese label length.
+
+        Notebook.tab(..., padding=...) is per tab and remains unchanged when
+        switching pages. Measure strings in the same font used for rendering.
+        """
+        pages=self.tabs.tabs()
+        if not pages:
+            return
+        labels=[self.tabs.tab(page,'text') for page in pages]
+        cell=max(140,max(self._tab_font.measure(label) for label in labels)+34)
+        self._tab_width_px=cell
+        for page,label in zip(pages,labels):
+            horizontal=max(9,(cell-self._tab_font.measure(label))//2)
+            self.tabs.tab(page,padding=(horizontal,8,horizontal,8))
 
     def _create_settings_tab(self,title):
         """Create an independent scrollable page for compact or high-DPI screens."""
