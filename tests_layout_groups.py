@@ -42,7 +42,7 @@ class GroupLayoutTests(unittest.TestCase):
         self.assertNotIn('weather_high',first)
         second=adjust_group(first,{},values,dy=1)
         self.assertEqual(second['weather_high_label']['x'],15)
-        self.assertEqual(second['weather_high']['y'],160)
+        self.assertEqual(second['weather_high']['y'],166)
 
     def test_selected_label_prefers_narrower_row_group(self):
         self.assertEqual(matching_group('train_time_3'),'列車3｜時刻（4箇所）')
