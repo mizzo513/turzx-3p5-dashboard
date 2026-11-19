@@ -44,7 +44,7 @@ class MarqueeScheduler:
         if tick < self.started_at:
             return None
         self.next_frame_at = tick + self.interval
-        offset = int((tick - self.started_at) * self.pixels_per_second)
+        offset = int((tick - self.started_at) * self.pixels_per_second + 1e-7)
         if offset == displayed_px:
             return None
         # Noninterruptible COM writes must not be started just before the
