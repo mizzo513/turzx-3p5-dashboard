@@ -28,33 +28,31 @@ class SettingsWindow:
         self.await_hash=None
         self.last_message=''
         root.title('TURZX 3.5 設定 V'+APP_VERSION+'（即時反映）')
-        root.geometry('850x715')
-        root.minsize(740,550)
+        # Compact notebook: each tab scrolls independently at high DPI.
+        # The action/status bar stays on screen regardless of the selected tab.
+        root.geometry('800x540')
+        root.minsize(700,425)
         root.columnconfigure(0,weight=1)
-        # Scrollable frame ensures the Apply/Stop buttons remain reachable on
-        # laptops with 768px-high displays, even at high Windows DPI scaling.
-        wrapper=ttk.Frame(root)
-        wrapper.grid(row=0,column=0,sticky='nsew')
-        wrapper.rowconfigure(0,weight=1)
-        wrapper.columnconfigure(0,weight=1)
-        canvas=tk.Canvas(wrapper,highlightthickness=0)
-        canvas.grid(row=0,column=0,sticky='nsew')
-        bar=ttk.Scrollbar(wrapper,orient='vertical',command=canvas.yview)
-        bar.grid(row=0,column=1,sticky='ns')
-        canvas.configure(yscrollcommand=bar.set)
-        main=ttk.Frame(canvas,padding=14)
-        inner_id=canvas.create_window((0,0),window=main,anchor='nw')
-        main.bind('<Configure>',lambda e:canvas.configure(scrollregion=canvas.bbox('all')))
-        canvas.bind('<Configure>',lambda e:canvas.itemconfigure(inner_id,width=e.width))
-        def wheel(event):
-            if event.delta:canvas.yview_scroll(-int(event.delta/120),'units')
-        root.bind('<MouseWheel>',wheel)  # scoped to main toplevel: editor will not scroll main window
-        main.columnconfigure(1,weight=1)
-        root.rowconfigure(0,weight=1)
+        root.rowconfigure(1,weight=1)
+        titlebar=ttk.Frame(root,padding=(12,8,12,4))
+        titlebar.grid(row=0,column=0,sticky='ew')
+        ttk.Label(titlebar,text='TURZX 3.5 設定  V'+APP_VERSION,
+                  font=('Yu Gothic UI',13,'bold')).pack(side='left')
+        ttk.Label(titlebar,text='480×320 / 画像180度回転',
+                  foreground='#52677c').pack(side='right')
+        self.tabs=ttk.Notebook(root)
+        self.tabs.grid(row=1,column=0,sticky='nsew',padx=10,pady=(1,4))
+        self._tab_canvases={}
+        display_tab=self._create_settings_tab('表示・時計')
+        weather_tab=self._create_settings_tab('天気')
+        train_tab=self._create_settings_tab('乗換')
+        manage_tab=self._create_settings_tab('外観・更新')
+        root.bind('<MouseWheel>',self._on_tab_wheel)
         self.vars={}
+        main=display_tab
         r=0
-        ttk.Label(main,text='TURZX 3.5｜表示設定 V'+APP_VERSION,font=('Yu Gothic UI',16,'bold')).grid(row=r,column=0,columnspan=3,sticky='w',pady=(0,8));r+=1
-        ttk.Label(main,text='表示：480×320 / 画像180度回転（V2で動作確認された向き）',foreground='#52677c').grid(row=r,column=0,columnspan=3,sticky='w',pady=(0,14));r+=1
+        ttk.Label(main,text='表示・USB・時計',font=('Yu Gothic UI',11,'bold')).grid(
+            row=r,column=0,columnspan=3,sticky='w',pady=(0,6));r+=1
         self.field(main,'USBポート','port',r,'AUTO');r+=1
         ttk.Label(main,text='AUTO：USB35INCHIPSV2を自動認識。接続機が複数ある場合はCOM番号を入力',foreground='#5c7184').grid(row=r,column=0,columnspan=3,sticky='w');r+=1
         ttk.Separator(main).grid(row=r,column=0,columnspan=3,sticky='ew',pady=12);r+=1
@@ -71,17 +69,27 @@ class SettingsWindow:
         ttk.Label(main,text='秒表示の転送方式').grid(row=r,column=0,sticky='w',pady=5)
         ttk.Combobox(main,textvariable=self.vars['clock_update_mode'],values=['compact','safe_strip'],state='readonly',width=25).grid(row=r,column=1,sticky='ew',padx=(10,0));r+=1
         ttk.Label(main,text='compact：秒の数字だけ更新 / safe_strip：従来の横幅全体更新（文字崩れ時）',foreground='#5c7184').grid(row=r,column=0,columnspan=3,sticky='w');r+=1
+        main=manage_tab
+        r=0
+        ttk.Label(main,text='レイアウト編集',font=('Yu Gothic UI',11,'bold')).grid(
+            row=r,column=0,columnspan=3,sticky='w',pady=(0,8));r+=1
         ttk.Button(main,text='文字・枠の配置／サイズ／色を編集',command=self.open_layout_editor).grid(row=r,column=0,columnspan=3,sticky='w',pady=(7,0));r+=1
         look=ttk.Frame(main);look.grid(row=r,column=0,columnspan=3,sticky='w',pady=(5,0));r+=1
         ttk.Button(look,text='現在の設定で画面プレビュー',command=self.preview_current).pack(side='left',padx=(0,8))
         ttk.Button(look,text='標準レイアウトへ戻す',command=self.reset_layout).pack(side='left')
-        update_row=ttk.Frame(main);update_row.grid(row=r,column=0,columnspan=3,sticky='w',pady=(7,2));r+=1
+        ttk.Separator(main).grid(row=r,column=0,columnspan=3,sticky='ew',pady=10);r+=1
+        ttk.Label(main,text='更新・メンテナンス',font=('Yu Gothic UI',11,'bold')).grid(
+            row=r,column=0,columnspan=3,sticky='w',pady=(0,8));r+=1
+        update_row=ttk.Frame(main);update_row.grid(row=r,column=0,columnspan=3,sticky='w',pady=(4,6));r+=1
         ttk.Button(update_row,text='GitHubで最新版を確認',command=self.check_github_update).pack(side='left',padx=(0,8))
         ttk.Button(update_row,text='更新ZIPを手動で選択',command=self.open_update).pack(side='left')
         self.vars['auto_update_check']=tk.BooleanVar(value=bool(self.conf.get('auto_update_check',True)))
         ttk.Checkbutton(main,text='設定画面を開いたときに最新版を自動確認（更新前に確認あり）',variable=self.vars['auto_update_check']).grid(row=r,column=0,columnspan=3,sticky='w');r+=1
         ttk.Separator(main).grid(row=r,column=0,columnspan=3,sticky='ew',pady=12);r+=1
-        ttk.Label(main,text='天気情報（Open-Meteo / APIキー不要）',font=('Yu Gothic UI',11,'bold')).grid(row=r,column=0,columnspan=3,sticky='w',pady=(0,7));r+=1
+        main=weather_tab
+        r=0
+        ttk.Label(main,text='天気情報（WeatherAPI.com / Open-Meteo）',
+                  font=('Yu Gothic UI',11,'bold')).grid(row=r,column=0,columnspan=3,sticky='w',pady=(0,7));r+=1
         ttk.Label(main,text='天気API取得元').grid(row=r,column=0,sticky='w',pady=5)
         self.vars['weather_provider']=tk.StringVar(
             value='WeatherAPI.com' if self.conf.get('weather_provider','weatherapi')=='weatherapi' else 'Open-Meteo')
@@ -105,7 +113,10 @@ class SettingsWindow:
         self.field(main,'経度','weather_longitude',r);r+=1
         self.field(main,'天気更新間隔（分）','weather_update_minutes',r);r+=1
         ttk.Separator(main).grid(row=r,column=0,columnspan=3,sticky='ew',pady=12);r+=1
-        ttk.Label(main,text='列車：加賀笠間 → 金沢 → 津幡（時刻表・外部連携）',font=('Yu Gothic UI',11,'bold')).grid(row=r,column=0,columnspan=3,sticky='w',pady=(0,7));r+=1
+        main=train_tab
+        r=0
+        ttk.Label(main,text='列車：加賀笠間 → 金沢 → 津幡',
+                  font=('Yu Gothic UI',11,'bold')).grid(row=r,column=0,columnspan=3,sticky='w',pady=(0,7));r+=1
         ttk.Label(main,text='時刻情報の取得元').grid(row=r,column=0,sticky='w',pady=5)
         self.vars['train_source']=tk.StringVar(value=self.conf.get('train_source','ir_schedule'))
         combo=ttk.Combobox(main,textvariable=self.vars['train_source'],values=['ir_schedule','csv','json','google_transit'],state='readonly')
@@ -125,20 +136,63 @@ class SettingsWindow:
         ttk.Button(btnrow,text='CSVの読込',command=self.import_csv).pack(side='left',padx=(0,8))
         ttk.Button(btnrow,text='CSVを開く',command=self.open_csv).pack(side='left',padx=(0,8))
         ttk.Button(btnrow,text='公式時刻表を見る',command=lambda:webbrowser.open(OFFICIAL_TIMETABLE)).pack(side='left')
-        ttk.Separator(main).grid(row=r,column=0,columnspan=3,sticky='ew',pady=12);r+=1
-        self.status=tk.StringVar(value='表示中の設定変更は「設定を即時反映」で適用できます。')
-        ttk.Label(main,textvariable=self.status,foreground='#21709c',wraplength=690).grid(row=r,column=0,columnspan=3,sticky='w',pady=(0,9));r+=1
-        row=ttk.Frame(main);row.grid(row=r,column=0,columnspan=3,sticky='ew');r+=1
-        ttk.Button(row,text='設定を即時反映',command=self.save).pack(side='left',padx=(0,9))
-        ttk.Button(row,text='天気APIテスト',command=self.test_weather).pack(side='left',padx=(0,9))
-        ttk.Button(row,text='表示開始',command=self.start).pack(side='left',padx=(0,9))
-        ttk.Button(row,text='表示停止',command=self.stop).pack(side='left',padx=(0,9))
+        # Persistent controls: tab switching never hides Save / Start / Stop.
+        footer=ttk.Frame(root,padding=(12,7,12,9))
+        footer.grid(row=2,column=0,sticky='ew')
+        footer.columnconfigure(0,weight=1)
+        ttk.Separator(footer).grid(row=0,column=0,sticky='ew',pady=(0,6))
+        self.status=tk.StringVar(value='設定を変更したら「設定を即時反映」で保存してください。')
+        ttk.Label(footer,textvariable=self.status,foreground='#21709c',
+                  wraplength=744,justify='left').grid(row=1,column=0,sticky='ew',pady=(0,6))
+        row=ttk.Frame(footer)
+        row.grid(row=2,column=0,sticky='ew')
+        ttk.Button(row,text='設定を即時反映',command=self.save).pack(side='left',padx=(0,7))
+        ttk.Button(row,text='天気APIテスト',command=self.test_weather).pack(side='left',padx=(0,7))
+        ttk.Button(row,text='表示開始',command=self.start).pack(side='left',padx=(0,7))
+        ttk.Button(row,text='表示停止',command=self.stop).pack(side='left',padx=(0,7))
         ttk.Button(row,text='終了',command=self.close).pack(side='right')
-        ttk.Label(main,text='※設定保存後、表示ソフトが通常0.5秒以内に検出します。天気API更新は通信状況によります。\n※時刻表は2026年3月14日改正の静的データです。遅延・運休等は反映しません。',foreground='#677b8d',justify='left').grid(row=r,column=0,columnspan=3,sticky='w',pady=(12,0))
         root.protocol('WM_DELETE_WINDOW',self.close)
         self.root.after(800,self.poll_runtime)
         if self.conf.get('auto_update_check',True):
             self.root.after(1800,lambda:self.check_github_update(silent=True))
+
+    def _create_settings_tab(self,title):
+        """Create an independent scrollable page for compact or high-DPI screens."""
+        page=ttk.Frame(self.tabs)
+        self.tabs.add(page,text=title)
+        page.rowconfigure(0,weight=1)
+        page.columnconfigure(0,weight=1)
+        canvas=tk.Canvas(page,highlightthickness=0,borderwidth=0)
+        canvas.grid(row=0,column=0,sticky='nsew')
+        scroll=ttk.Scrollbar(page,orient='vertical',command=canvas.yview)
+        scroll.grid(row=0,column=1,sticky='ns')
+        canvas.configure(yscrollcommand=scroll.set)
+        inner=ttk.Frame(canvas,padding=(12,8,12,10))
+        window=canvas.create_window((0,0),window=inner,anchor='nw')
+        inner.columnconfigure(1,weight=1)
+        inner.bind('<Configure>',lambda _e,c=canvas:c.configure(scrollregion=c.bbox('all')))
+        canvas.bind('<Configure>',lambda e,c=canvas,item=window:c.itemconfigure(item,width=e.width))
+        self._tab_canvases[str(page)]=canvas
+        return inner
+
+    def _on_tab_wheel(self,event):
+        """Scroll only the active settings page, never a detached layout editor."""
+        try:
+            page=self.tabs.select()
+            canvas=self._tab_canvases.get(str(page))
+            if canvas is None or not event.delta:
+                return
+            hovered=self.root.winfo_containing(event.x_root,event.y_root)
+            if hovered is None or hovered.winfo_toplevel() is not self.root:
+                return
+            # Do not scroll the tab when pointer is over the persistent buttons.
+            if not str(hovered).startswith(str(canvas.master)):
+                return
+            units=-int(event.delta/120)
+            if not units:units=-1 if event.delta>0 else 1
+            canvas.yview_scroll(units,'units')
+        except (tk.TclError,AttributeError):
+            pass
 
     def field(self, main, label, name, row, fallback=None, show=None):
         self.vars[name]=tk.StringVar(value=str(self.conf.get(name, fallback or '')))
