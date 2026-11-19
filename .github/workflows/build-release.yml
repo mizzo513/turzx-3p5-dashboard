@@ -30,6 +30,7 @@ jobs:
         run: |
           python -m compileall -q .
 
+      # Includes V3.9.7 reconnect and clock-crop tests; release only after green CI.
       - name: Run GUI, official rail, weather, layout and updater regressions
         shell: pwsh
         run: |
