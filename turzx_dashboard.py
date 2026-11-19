@@ -235,6 +235,25 @@ def load_settings():
                             except (ValueError,TypeError):
                                 pass
                 conf['text_styles']=text_styles
+            # Reposition user-customized card geometries by the same default
+            # deltas. Keep offsets and widths, while using the reclaimed space.
+            panel_styles=copy.deepcopy(conf.get('panel_styles') or {})
+            if isinstance(panel_styles,dict):
+                for key,(dy,dh) in {
+                    'train_1':(0,8),'train_2':(9,8),'train_3':(18,13)
+                }.items():
+                    item=panel_styles.get(key)
+                    if not isinstance(item,dict):
+                        continue
+                    if 'y' in item:
+                        try:item['y']=max(0,min(318,int(item['y'])+dy))
+                        except (ValueError,TypeError):pass
+                    if 'h' in item:
+                        try:
+                            current_y=int(item.get('y',panel_settings(conf,key)['y']))
+                            item['h']=max(2,min(320-current_y,int(item['h'])+dh))
+                        except (ValueError,TypeError):pass
+                conf['panel_styles']=panel_styles
         conf['layout_revision']=397
     return conf
 
