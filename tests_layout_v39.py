@@ -53,14 +53,17 @@ class V39LayoutTests(unittest.TestCase):
                 self.assertLess(left[2],right[0],(n,left,right))
             self.assertIn(f'text:train_detail_{n}',boxes)
 
-    def test_status_is_inside_weather_and_train_panels(self):
+    def test_status_is_in_header_and_source_note_in_train(self):
         boxes={}
         app.render_original(self.now,self.weather,self.train,self.conf,hit_boxes=boxes)
-        for outer,inner in [('weather','footer_weather'),
-                            ('train','footer_train'),('train','train_source_note')]:
-            x0,y0,x1,y1=boxes[f'panel:{outer}']
-            l,t,r,b=boxes[f'text:{inner}']
-            self.assertTrue(x0<=l<r<=x1 and y0<=t<b<=y1,(outer,inner,(l,t,r,b)))
+        header=boxes['panel:header']
+        for key in ('version','footer_weather','footer_train'):
+            l,t,r,b=boxes['text:'+key]
+            self.assertTrue(header[0]<=l<r<=header[2],(key,l,r))
+            self.assertTrue(header[1]<=t<b<=header[3],(key,t,b))
+        x0,y0,x1,y1=boxes['panel:train']
+        l,t,r,b=boxes['text:train_source_note']
+        self.assertTrue(x0<=l<r<=x1 and y0<=t<b<=y1)
 
     def test_city_and_current_temperature_have_no_prefix_or_decimal(self):
         seen={}
@@ -106,7 +109,7 @@ class V39LayoutTests(unittest.TestCase):
             location.write_text(json.dumps(legacy),encoding='utf-8')
             with patch.object(app,'SETTINGS',location):
                 migrated=app.load_settings()
-                self.assertEqual(migrated['layout_revision'],396)
+                self.assertEqual(migrated['layout_revision'],397)
                 self.assertEqual(migrated['weather_city'],'津幡町')
                 self.assertEqual(migrated['port'],'COM11')
                 self.assertEqual(migrated['train_count'],2)
