@@ -46,6 +46,13 @@ jobs:
                 for needle in ['IR運行情報','現在、平常','七尾線','Nanao Line','Nanao','平常運転']:
                     pos=visible.find(needle)
                     if pos>=0:print('context',needle,visible[max(0,pos-65):pos+130])
+                if 'ishikawa-railway.jp' in url:
+                    print('ishi_html_context',re.sub('\\s+',' ',s[max(0,s.find('IR運行情報')-200):s.find('IR運行情報')+1000])[:700])
+                    scripts=re.findall(r'<script[^>]*src=[\\x22\\x27]([^\\x22\\x27]+)',s,re.I)
+                    print('ishi_scripts',scripts[:12])
+                    print('ishi_iframes',re.findall(r'<iframe[^>]*src=[\\x22\\x27]([^\\x22\\x27]+)',s,re.I)[:6])
+                if 'global.trafficinfo' in url and 'Nanao Line' in visible:
+                    i=visible.index('Nanao Line');print('nanao_500',visible[max(0,i-55):i+500])
                 if 'trafficinfo.westjr.co.jp' in url:
                     scripts=re.findall(r'<script[^>]*src=[\x22\x27]([^\x22\x27]+)',s,re.I)
                     print('js_sources_count',len(scripts),'js_source_names',[re.sub(r'.*/','',q).split('?')[0][:70] for q in scripts[:12]])
