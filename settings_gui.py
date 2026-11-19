@@ -64,7 +64,7 @@ class SettingsWindow:
         ttk.Label(main,text='時刻取得：NICT NTP（インターネット優先）',foreground='#21709c').grid(row=r,column=0,columnspan=3,sticky='w',pady=(6,2));r+=1
         self.field(main,'NTPサーバー','ntp_server',r,'ntp.nict.jp');r+=1
         self.field(main,'時刻再同期間隔（分）','ntp_sync_minutes',r,'30');r+=1
-        ttk.Label(main,text='UDP 123が遮断されている場合はPC時刻へ切替。同期成功後は最長6時間保持。PCの時計は変更しません。',foreground='#5c7184').grid(row=r,column=0,columnspan=3,sticky='w');r+=1
+        ttk.Label(main,text='UDP 123が遮断されている場合はPC時刻へ切替。同期成功後は最長6時間保持。PCの時計は変更しません。',foreground='#5c7184',wraplength=710).grid(row=r,column=0,columnspan=3,sticky='w');r+=1
         self.vars['clock_update_mode']=tk.StringVar(value=self.conf.get('clock_update_mode','compact'))
         ttk.Label(main,text='秒表示の転送方式').grid(row=r,column=0,sticky='w',pady=5)
         ttk.Combobox(main,textvariable=self.vars['clock_update_mode'],values=['compact','safe_strip'],state='readonly',width=25).grid(row=r,column=1,sticky='ew',padx=(10,0));r+=1
@@ -85,7 +85,6 @@ class SettingsWindow:
         ttk.Button(update_row,text='更新ZIPを手動で選択',command=self.open_update).pack(side='left')
         self.vars['auto_update_check']=tk.BooleanVar(value=bool(self.conf.get('auto_update_check',True)))
         ttk.Checkbutton(main,text='設定画面を開いたときに最新版を自動確認（更新前に確認あり）',variable=self.vars['auto_update_check']).grid(row=r,column=0,columnspan=3,sticky='w');r+=1
-        ttk.Separator(main).grid(row=r,column=0,columnspan=3,sticky='ew',pady=12);r+=1
         main=weather_tab
         r=0
         ttk.Label(main,text='天気情報（WeatherAPI.com / Open-Meteo）',
@@ -99,7 +98,7 @@ class SettingsWindow:
         self.weather_provider_combo.grid(row=r,column=1,sticky='ew',padx=(10,0));r+=1
         self.field(main,'WeatherAPI.com APIキー','weatherapi_key',r,show='*');r+=1
         ttk.Label(main,text='WeatherAPI.com使用時はAPIキーが必要です。キーはPCの設定に保存し、GitHubには送信しません。',
-                  foreground='#5c7184').grid(row=r,column=0,columnspan=3,sticky='w');r+=1
+                  foreground='#5c7184',wraplength=710).grid(row=r,column=0,columnspan=3,sticky='w');r+=1
         ttk.Button(main,text='WeatherAPI.comで無料APIキーを取得',
                    command=lambda:webbrowser.open('https://www.weatherapi.com/signup.aspx')
                    ).grid(row=r,column=0,columnspan=3,sticky='w',pady=(3,6));r+=1
@@ -112,7 +111,6 @@ class SettingsWindow:
         self.field(main,'緯度','weather_latitude',r);r+=1
         self.field(main,'経度','weather_longitude',r);r+=1
         self.field(main,'天気更新間隔（分）','weather_update_minutes',r);r+=1
-        ttk.Separator(main).grid(row=r,column=0,columnspan=3,sticky='ew',pady=12);r+=1
         main=train_tab
         r=0
         ttk.Label(main,text='列車：加賀笠間 → 金沢 → 津幡',
@@ -121,7 +119,7 @@ class SettingsWindow:
         self.vars['train_source']=tk.StringVar(value=self.conf.get('train_source','ir_schedule'))
         combo=ttk.Combobox(main,textvariable=self.vars['train_source'],values=['ir_schedule','csv','json','google_transit'],state='readonly')
         combo.grid(row=r,column=1,sticky='ew',padx=(10,0));r+=1
-        ttk.Label(main,text='ir_schedule：同梱2026/3/14改正ダイヤ / csv・json：外部連携 / google_transit：APIキー',foreground='#5c7184').grid(row=r,column=0,columnspan=3,sticky='w',pady=(0,5));r+=1
+        ttk.Label(main,text='ir_schedule：同梱2026/3/14改正ダイヤ / csv・json：外部連携 / google_transit：APIキー',foreground='#5c7184',wraplength=710).grid(row=r,column=0,columnspan=3,sticky='w',pady=(0,5));r+=1
         ttk.Label(main,text='IR時刻表の表示区間').grid(row=r,column=0,sticky='w',pady=5)
         route_choices=('加賀笠間→金沢→津幡','金沢→津幡')
         self.vars['ir_route']=tk.StringVar(value=route_choices[0] if self.conf.get('ir_route','via_kanazawa')=='via_kanazawa' else route_choices[1])
@@ -131,11 +129,11 @@ class SettingsWindow:
         self.field(main,'表示列車数（最大3）','train_count',r);r+=1
         self.field(main,'Google Routes APIキー（任意）','google_maps_api_key',r,show='*');r+=1
         btnrow=ttk.Frame(main);btnrow.grid(row=r,column=0,columnspan=3,sticky='w',pady=(5,7));r+=1
-        ttk.Button(btnrow,text='列車候補・データを診断',command=self.diagnose_trains).pack(side='left',padx=(0,8))
-        ttk.Button(btnrow,text='同梱時刻表を開く',command=self.open_schedule).pack(side='left',padx=(0,8))
-        ttk.Button(btnrow,text='CSVの読込',command=self.import_csv).pack(side='left',padx=(0,8))
-        ttk.Button(btnrow,text='CSVを開く',command=self.open_csv).pack(side='left',padx=(0,8))
-        ttk.Button(btnrow,text='公式時刻表を見る',command=lambda:webbrowser.open(OFFICIAL_TIMETABLE)).pack(side='left')
+        ttk.Button(btnrow,text='列車候補・データを診断',command=self.diagnose_trains).grid(row=0,column=0,sticky='w',padx=(0,8),pady=(0,4))
+        ttk.Button(btnrow,text='同梱時刻表を開く',command=self.open_schedule).grid(row=0,column=1,sticky='w',padx=(0,8),pady=(0,4))
+        ttk.Button(btnrow,text='公式時刻表を見る',command=lambda:webbrowser.open(OFFICIAL_TIMETABLE)).grid(row=0,column=2,sticky='w',pady=(0,4))
+        ttk.Button(btnrow,text='CSVの読込',command=self.import_csv).grid(row=1,column=0,sticky='w',padx=(0,8))
+        ttk.Button(btnrow,text='CSVを開く',command=self.open_csv).grid(row=1,column=1,sticky='w')
         # Persistent controls: tab switching never hides Save / Start / Stop.
         footer=ttk.Frame(root,padding=(12,7,12,9))
         footer.grid(row=2,column=0,sticky='ew')
