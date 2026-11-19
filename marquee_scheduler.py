@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 @dataclass
 class MarqueeScheduler:
-    pixels_per_second: float = 16.0 / 1.7  # match V3.9.7 travel speed
+    pixels_per_second: float = 9.4  # configurable via rail_scroll_speed_px_s
     target_fps: float = 5.0
     pause_seconds: float = 2.0
     started_at: float | None = None
