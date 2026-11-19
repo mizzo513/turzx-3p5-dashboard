@@ -47,6 +47,7 @@ GROUPS={
     '列車｜時刻（3本×4箇所）':('train',_keys(TIME_FIELDS)),
     '列車｜番号（3本）':('train',_keys(('train_index',))),
     '列車｜乗換案内（3本）':('train',_keys(('train_detail',))),
+    '列車｜乗換ホーム（3本・同一X座標）':('train',_keys(('train_transfer_platform',))),
     '列車｜旧モード時刻（3本）':('train',_keys(('train_legacy_time',))),
 }
 
