@@ -50,6 +50,8 @@ jobs:
                     print('ishi_html_context',re.sub('\\s+',' ',s[max(0,s.find('IR運行情報')-200):s.find('IR運行情報')+1000])[:700])
                     scripts=re.findall(r'<script[^>]*src=[\\x22\\x27]([^\\x22\\x27]+)',s,re.I)
                     print('ishi_scripts',scripts[:12])
+                    print('ishi_tags',re.findall(r'<script[^>]*>',s,re.I)[:12])
+                    print('ishi_status_code_context',re.findall(r'.{0,80}(?:HD_info|status_1|getStatus|run_info|operations).{0,180}',s,re.I)[:10])
                     print('ishi_iframes',re.findall(r'<iframe[^>]*src=[\\x22\\x27]([^\\x22\\x27]+)',s,re.I)[:6])
                 if 'global.trafficinfo' in url and 'Nanao Line' in visible:
                     i=visible.index('Nanao Line');print('nanao_500',visible[max(0,i-55):i+500])
