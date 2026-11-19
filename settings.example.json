@@ -19,5 +19,7 @@
   "ntp_sync_minutes": 30,
   "ir_route": "via_kanazawa",
   "weather_provider": "weatherapi",
-  "weatherapi_key": ""
+  "weatherapi_key": "",
+  "rail_status_enabled": true,
+  "rail_status_update_minutes": 5
 }
