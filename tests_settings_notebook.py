@@ -88,10 +88,7 @@ class TestSettingsNotebook(unittest.TestCase):
         # Clam makes custom tab backgrounds effective on Windows native themes.
         self.assertEqual(style.theme_use(),'clam')
         tab_style='TURZX.TNotebook.Tab'
-        selected=dict(style.map(tab_style,'background')).get('selected')
-        # State map consists of (state_spec, color) pairs, not tab text.
-        color_map=dict((tuple(spec) if not isinstance(spec,str) else spec, color)
-                       for spec,color in style.map(tab_style,'background'))
+        # Selected and inactive backgrounds use distinct, readable colors.
         self.assertNotEqual(
             style.lookup(tab_style,'background',('selected',)),
             style.lookup(tab_style,'background',('!selected',)))
@@ -102,6 +99,8 @@ class TestSettingsNotebook(unittest.TestCase):
         for page in self.gui.tabs.tabs():
             label=self.gui.tabs.tab(page,'text')
             padding=self.gui.tabs.tab(page,'padding')
+            if isinstance(padding,str):
+                padding=self.root.tk.splitlist(padding)
             # Tk may return pixel values as strings.
             left,top,right,bottom=(int(x) for x in padding)
             self.assertEqual((top,bottom),(8,8))
