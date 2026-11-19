@@ -25,7 +25,14 @@ TIME_FIELDS=('train_time','train_kan_arr','train_kan_dep','train_arrive')
 GROUPS={
     '天気｜地域名・天候':
         ('weather',('weather_city','weather_description')),
-    '天気｜現在気温（数値と単位）':
+    # Separate one-member groups: the editor defaults to independent size and
+    # position for the temperature number and degree symbol.
+    '天気｜現在気温 数値':
+        ('weather',('weather_temperature',)),
+    '天気｜現在気温 単位':
+        ('weather',('weather_temperature_unit',)),
+    # Optional paired adjustment remains available in the group dialog.
+    '天気｜現在気温（数値と単位 一括）':
         ('weather',('weather_temperature','weather_temperature_unit')),
     '天気｜項目名（5種）':
         ('weather',('weather_high_label','weather_low_label',
