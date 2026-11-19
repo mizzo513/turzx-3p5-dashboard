@@ -29,7 +29,8 @@ from urllib.request import Request, urlopen
 
 from PIL import Image, ImageDraw, ImageFont
 from runtime_ipc import StatusServer, current_state
-from text_layout import props as style_props, validate_styles, ELEMENTS, WEATHER_RIGHT_ALIGNED_VALUES
+from text_layout import (props as style_props, validate_styles, ELEMENTS,
+                         WEATHER_RIGHT_ALIGNED_VALUES, HEADER_RIGHT_ALIGNED_VALUES)
 from panel_layout import draw_panel, validate_panels, settings as panel_settings
 from version_info import APP_VERSION
 from internet_clock import InternetClock, query_ntp, NTP_SERVER
@@ -665,7 +666,9 @@ def style_label(draw, conf, key, text, min_size=8, max_width=None):
     spec=style_props(conf,key)
     width=spec['max_width'] if max_width is None else max(spec['max_width'],max_width)
     width=max(1,min(width,W-spec['x']-1))
-    if key in WEATHER_RIGHT_ALIGNED_VALUES:
+    if key in WEATHER_RIGHT_ALIGNED_VALUES or key in HEADER_RIGHT_ALIGNED_VALUES:
+        # Weather numeric entries share a right edge; header refresh labels
+        # and the version align to the same right margin.
         # Numeric entries share an exact right edge (104px in the default
         # layout). The configured x shifts the entire right-aligned cell,
         # while font size changes never move its right edge.
@@ -828,6 +831,11 @@ def render_original(now, weather, train_state, conf, hit_boxes=None, rail_notice
 
     panel('header')
     label('clock_datetime',datetime_text(now,conf))
+    # Group update timestamps and version in the same upper-right column.
+    weather_updated=weather.fetched.strftime('%H:%M') if weather.fetched else '--:--'
+    train_updated=train_state.loaded.strftime('%H:%M') if train_state.loaded else '--:--'
+    label('footer_weather','天気 '+weather_updated)
+    label('footer_train','乗換 '+train_updated)
     label('version','v'+APP_VERSION)
 
     # Compact weather panel: no prefecture prefix, integer temperatures.
@@ -900,14 +908,9 @@ def render_original(now, weather, train_state, conf, hit_boxes=None, rail_notice
         else:
             label(f'train_placeholder_{n}','-- : --')
 
-    # Update timestamps are within their own panels, not in a fourth footer box.
-    d.line((13,283,119,283),fill=BORDER)
-    d.line((145,283,464,283),fill=BORDER)
-    weather_status='更新 '+weather.fetched.strftime('%H:%M') if weather.fetched else '天気 未取得'
-    train_status='更新 '+train_state.loaded.strftime('%H:%M') if train_state.loaded else '列車 未取得'
-    label('footer_weather',weather_status)
+    # The old footer dividers and duplicated update timestamps are removed.
+    # The small source note stays in the lower part of the train panel.
     label('train_source_note','時刻表（予定）' if train_state.source=='ir_schedule' else train_state.source)
-    label('footer_train',train_status)
     return img
 
 
@@ -1338,6 +1341,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                 weather.provider,weather.condition_text,weather.raw_condition_code,
                 weather.fetched.strftime('%H:%M') if weather.fetched else None,
                 train.status,rail_notice.text,
+                train.loaded.strftime('%H:%M') if train.loaded else None,
                 tuple((t.depart.isoformat(),t.arrive.isoformat(),t.line,t.platform) for t in train.trains),
                 now.date()
             )
