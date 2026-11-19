@@ -972,9 +972,8 @@ def render_original(now, weather, train_state, conf, hit_boxes=None, rail_notice
         else:
             label(f'train_placeholder_{n}','-- : --')
 
-    # The old footer dividers and duplicated update timestamps are removed.
-    # The small source note stays in the lower part of the train panel.
-    label('train_source_note','時刻表（予定）' if train_state.source=='ir_schedule' else train_state.source)
+    # No footer divider or timetable-source note: the lower train area
+    # belongs entirely to the third train card.
     return img
 
 
