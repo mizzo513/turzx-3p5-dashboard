@@ -16,7 +16,7 @@ class StartupTests(unittest.TestCase):
         starts=[]
         afters=[]
         window.runtime_state=lambda:runtime
-        window.start=lambda:starts.append('start')
+        window.start=lambda **kwargs:starts.append(('start',kwargs.get('save_before_launch',True)))
         window.root=SimpleNamespace(after=lambda ms,callback:afters.append((ms,callback)))
         return window,starts,afters
 
@@ -26,7 +26,7 @@ class StartupTests(unittest.TestCase):
     def test_no_engine_starts_immediately(self):
         win,started,callbacks=self.editor(runtime=None)
         win._autostart_engine()
-        self.assertEqual(started,['start'])
+        self.assertEqual(started,[('start',False)])
         self.assertEqual(callbacks,[])
 
     def test_already_running_current_engine_not_duplicated(self):
@@ -42,7 +42,7 @@ class StartupTests(unittest.TestCase):
         self.assertEqual(callbacks[0][0],500)
         win.runtime_state=lambda:None
         callbacks[0][1]()
-        self.assertEqual(started,['start'])
+        self.assertEqual(started,[('start',False)])
 
     def test_disabled_autostart_never_starts(self):
         win,started,callbacks=self.editor(enabled=False)
