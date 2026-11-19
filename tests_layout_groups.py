@@ -67,7 +67,7 @@ class GroupLayoutTests(unittest.TestCase):
 
     def test_panel_bounds_are_honored(self):
         with self.assertRaisesRegex(ValueError,'範囲外'):
-            adjust_group({}, {}, '天気｜数値（5種）',dx=40)
+            adjust_group({}, {}, '天気｜数値（5種）',dx=60)
 
     def test_unknown_group_and_bad_numeric_input(self):
         with self.assertRaises(ValueError):
