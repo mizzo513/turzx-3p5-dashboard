@@ -89,15 +89,14 @@ class LayoutEditor:
                 ttk.Button(fields,text='選択',width=5,command=lambda n=key:self.pick_color(n)).grid(row=row,column=2,padx=(0,3))
             self.fieldwidgets[key]=(lbl,entry)
         for var in self.vars.values():var.trace_add('write',self.on_field_edit)
+        actions=ttk.Frame(fields)
+        actions.grid(row=10,column=0,columnspan=3,pady=(6,0),sticky='w')
         self.individual_switch=ttk.Checkbutton(
-            fields,text='個別設定（この文字のみ変更）',
+            actions,text='個別設定',
             variable=self.individual_mode,command=self.on_mode_change)
-        self.individual_switch.grid(row=10,column=0,columnspan=3,sticky='w',pady=(7,1))
-        ttk.Label(fields,textvariable=self.group_label,foreground='#537c92',
-                  wraplength=310).grid(row=11,column=0,columnspan=3,sticky='w',pady=(0,3))
-        actions=ttk.Frame(fields);actions.grid(row=12,column=0,columnspan=3,pady=(7,0),sticky='w')
-        ttk.Button(actions,text='選択項目を初期化',command=self.reset_one).pack(side='left',padx=(0,6))
-        ttk.Button(actions,text='全項目を初期化',command=self.reset_all).pack(side='left')
+        self.individual_switch.pack(side='left',padx=(0,8))
+        ttk.Button(actions,text='選択を初期化',command=self.reset_one).pack(side='left',padx=(0,6))
+        ttk.Button(actions,text='全て初期化',command=self.reset_all).pack(side='left')
 
         bottom=ttk.Frame(self.window,padding=(12,3,12,4));bottom.grid(row=3,column=0,sticky='ew')
         ttk.Button(bottom,text='実機へ即時反映（保存）',command=self.apply).pack(side='left',padx=(0,8))
