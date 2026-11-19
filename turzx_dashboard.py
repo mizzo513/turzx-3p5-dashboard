@@ -73,6 +73,7 @@ DEFAULTS = {
     'weather_latitude': 36.5144,
     'weather_longitude': 136.5656,
     'weather_update_minutes': 10,
+    'auto_start_display': True, # launch USB engine automatically when GUI opens
     'weather_provider': 'weatherapi', # weatherapi or openmeteo
     'weatherapi_key': '', # local settings only, never bundled into public releases
     'train_source': 'ir_schedule',  # bundled IR timetable, csv, json, or google_transit
