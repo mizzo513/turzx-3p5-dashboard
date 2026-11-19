@@ -66,6 +66,8 @@ class LayoutEditor:
         fields=ttk.LabelFrame(controls,text='選択項目の設定',padding=9)
         fields.grid(row=0,column=1,sticky='nsew')
         fields.columnconfigure(1,weight=1)
+        self.individual_mode=tk.BooleanVar(value=False)
+        self.group_label=tk.StringVar(value='')
         self.vars={k:tk.StringVar() for k in ('x','y','size','color','w','h','radius','border_width','outline','fill')}
         self.fieldwidgets={}
         entries=[('x','X座標'),('y','Y座標'),('size','文字サイズ (px)'),('color','文字色 (#RRGGBB)'),
@@ -87,7 +89,13 @@ class LayoutEditor:
                 ttk.Button(fields,text='選択',width=5,command=lambda n=key:self.pick_color(n)).grid(row=row,column=2,padx=(0,3))
             self.fieldwidgets[key]=(lbl,entry)
         for var in self.vars.values():var.trace_add('write',self.on_field_edit)
-        actions=ttk.Frame(fields);actions.grid(row=10,column=0,columnspan=3,pady=(9,0),sticky='w')
+        self.individual_switch=ttk.Checkbutton(
+            fields,text='個別設定（この文字のみ変更）',
+            variable=self.individual_mode,command=self.on_mode_change)
+        self.individual_switch.grid(row=10,column=0,columnspan=3,sticky='w',pady=(7,1))
+        ttk.Label(fields,textvariable=self.group_label,foreground='#537c92',
+                  wraplength=310).grid(row=11,column=0,columnspan=3,sticky='w',pady=(0,3))
+        actions=ttk.Frame(fields);actions.grid(row=12,column=0,columnspan=3,pady=(7,0),sticky='w')
         ttk.Button(actions,text='選択項目を初期化',command=self.reset_one).pack(side='left',padx=(0,6))
         ttk.Button(actions,text='全項目を初期化',command=self.reset_all).pack(side='left')
 
@@ -118,7 +126,32 @@ class LayoutEditor:
                 label.grid();entry.grid()
             else:
                 label.grid_remove();entry.grid_remove()
+        if kind=='text':
+            group=self.selected_group()
+            self.group_label.set(
+                '一括調整：'+group+'（X・Y・文字サイズ）'
+                if group and not self.individual_mode.get() else
+                '個別調整：選択文字のみ')
+            self.individual_switch.configure(state='normal' if group else 'disabled')
+        else:
+            self.group_label.set('パネル枠は個別に調整')
+            self.individual_switch.configure(state='disabled')
         self.loading=False
+
+    def selected_group(self):
+        if self.selected[0]!='text':
+            return None
+        key=self.selected[1]
+        group=matching_group(key)
+        return group if group in GROUPS and key in GROUPS[group][1] else None
+
+    def is_group_mode(self):
+        selector=getattr(self,'individual_mode',None)
+        return bool(self.selected_group() and selector is not None and not selector.get())
+
+    def on_mode_change(self):
+        self.load_selected()
+        self.refresh()
 
     def on_field_edit(self,*_):
         if self.loading:return
@@ -129,7 +162,26 @@ class LayoutEditor:
                 new['color']=self.vars['color'].get().upper()
                 if not (0<=new['x']<480 and 0<=new['y']<320 and 8<=new['size']<=52):return
                 if not re.fullmatch(r'#[0-9A-F]{6}',new['color']):return
-                self.text_styles[key]=new
+                if self.is_group_mode():
+                    old=text_props({'text_styles':self.text_styles},key)
+                    dx=new['x']-old['x']
+                    dy=new['y']-old['y']
+                    dsize=new['size']-old['size']
+                    if dx or dy or dsize:
+                        try:
+                            self.text_styles=adjust_group(
+                                self.text_styles,self.panel_styles,
+                                self.selected_group(),dx=dx,dy=dy,dsize=dsize)
+                        except ValueError as exc:
+                            self.status.set('調整不可：'+str(exc))
+                            self.load_selected()
+                            return
+                    # Color remains an individual property, even in group mode.
+                    if new['color']!=old['color']:
+                        self.text_styles[key]={**self.text_styles.get(key,{}),
+                                               'color':new['color']}
+                else:
+                    self.text_styles[key]=new
             else:
                 new={a:int(self.vars[a].get()) for a in ('x','y','w','h','radius','border_width')}
                 new['fill']=self.vars['fill'].get().upper()
@@ -209,16 +261,25 @@ class LayoutEditor:
             if target!=self.selected:
                 self.set_selection(target)
         p=self.current_props()
-        self.drag={'x':x,'y':y,'kind':'resize' if corner else 'move','initial':p.copy()}
+        self.drag={'x':x,'y':y,'kind':'resize' if corner else 'move',
+                   'initial':p.copy(),'base_styles':copy.deepcopy(self.text_styles)}
 
     def on_drag(self,event):
         if not self.drag:return
         kind,key=self.selected
         p=self.drag['initial'];dx=event.x-self.drag['x'];dy=event.y-self.drag['y']
         if kind=='text':
-            new={'x':min(479,max(0,p['x']+dx)), 'y':min(319,max(0,p['y']+dy)),
-                 'size':p['size'],'color':p['color']}
-            self.text_styles[key]=new
+            if self.is_group_mode():
+                try:
+                    self.text_styles=adjust_group(
+                        self.drag['base_styles'],self.panel_styles,self.selected_group(),
+                        dx=dx,dy=dy)
+                except ValueError:
+                    return
+            else:
+                new={'x':min(479,max(0,p['x']+dx)), 'y':min(319,max(0,p['y']+dy)),
+                     'size':p['size'],'color':p['color']}
+                self.text_styles[key]=new
         else:
             if self.drag['kind']=='resize':
                 new=dict(p)
