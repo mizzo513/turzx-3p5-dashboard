@@ -86,7 +86,7 @@ def _short(text, limit=90):
 
 def affects_ir_route(message):
     """Only report a specific impact when a segment touches 加賀笠間〜津幡."""
-    if re.search(r'全線|全区間|全列車|IRいしかわ鉄道線全体',message):
+    if re.search(r'全線|全区間|全列車|[ＩI]Ｒ?いしかわ鉄道線(?:で|は|全体)|IRいしかわ鉄道線(?:で|は|全体)',message):
         return True
     for a,b in RANGE_PATTERN.findall(message):
         i,j=ROUTE.index(a),ROUTE.index(b)
@@ -109,11 +109,23 @@ def parse_ir(data):
         return LineInfo('IR','normal','平常')
     if affects_ir_route(title):
         # Display short descriptive fragment, not the original full notice.
-        kind=('運転見合わせ' if re.search('運転見合わせ|運転を見合わせ',title)
-              else '運休' if '運休' in title or '取り止め' in title
-              else '遅延' if re.search('遅れ|遅延',title)
-              else '運行情報')
-        return LineInfo('IR','impacted','IR：'+kind+'（'+_short(title,85)+'）')
+        possible=bool(re.search('可能性|場合がござい|おそれ|見込まれる|恐れ',title))
+        suspended=bool(re.search('運転見合わせ|運転を見合わせ',title))
+        delayed=bool(re.search('遅れ|遅延',title))
+        kind=('遅延・見合わせ' if suspended and delayed else
+              '運転見合わせ' if suspended else
+              '運休' if re.search('運休|取り止め',title) else
+              '遅延' if delayed else '運行情報')
+        if possible:
+            kind+='の可能性'
+        terms=[]
+        if '本日' in title:terms.append('本日')
+        if '明日' in title:terms.append('明日')
+        if '強風' in title:terms.append('強風')
+        if '大雨' in title:terms.append('大雨')
+        if '雪' in title:terms.append('雪')
+        return LineInfo('IR','impacted','IR：'+kind+
+                        ('（'+'・'.join(terms)+'）' if terms else ''))
     # The source reports an issue, but its own text does not identify our
     # section. Avoid an out-of-route false alarm and do NOT mark normal.
     return LineInfo('IR','unknown','IR：影響区間未確認')
