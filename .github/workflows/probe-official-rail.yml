@@ -34,6 +34,14 @@ jobs:
           'https://global.trafficinfo.westjr.co.jp/en/hokuriku',
           'https://global.trafficinfo.westjr.co.jp/tc/hokuriku'
         ]
+        for script_url in ['https://www.ishikawa-railway.jp/assets/js/operation_information.js?v=1']:
+            try:
+                req=urllib.request.Request(script_url,headers={'User-Agent':'Mozilla/5.0'})
+                with urllib.request.urlopen(req,timeout=10) as response:js=response.read(100000).decode('utf-8','replace')
+                print('operation_js_length',len(js))
+                print('operation_js',re.sub('\\s+',' ',js)[:7000])
+            except Exception as e:
+                print('operation_js_err',type(e).__name__,str(e)[:200])
         for url in urls:
             print('URL',url)
             try:
