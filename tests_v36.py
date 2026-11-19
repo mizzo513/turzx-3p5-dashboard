@@ -28,7 +28,7 @@ class TestsV36(unittest.TestCase):
     def test_new_date_and_version(self):
         self.assertEqual(dash.datetime_text(self.now,self.cfg),'11/18(水) 13:15:00')
         self.assertNotIn('title',ELEMENTS)
-        self.assertEqual(APP_VERSION,'3.9.5')
+        self.assertEqual(APP_VERSION,'3.9.6')
         boxes={}
         dash.render_original(self.now,self.w,self.trains,self.cfg,hit_boxes=boxes)
         for key in ('clock_datetime','version'):
@@ -71,13 +71,13 @@ class TestsV36(unittest.TestCase):
 
     def test_updater_manifest_validation(self):
         fakeexe=b'MZ'+b'\x00'*1500
-        payload={'app_id':update_manager.APP_ID,'filename':update_manager.EXE_NAME,'version':'3.9.6',
+        payload={'app_id':update_manager.APP_ID,'filename':update_manager.EXE_NAME,'version':'3.9.7',
                  'size':len(fakeexe),'sha256':hashlib.sha256(fakeexe).hexdigest()}
         with tempfile.TemporaryDirectory() as tmp:
             p=Path(tmp)/'update.zip'
             with zipfile.ZipFile(p,'w') as z:
                 z.writestr('manifest.json',json.dumps(payload));z.writestr(update_manager.EXE_NAME,fakeexe)
-            self.assertEqual(update_manager.manifest_from_zip(p)['version'],'3.9.6')
+            self.assertEqual(update_manager.manifest_from_zip(p)['version'],'3.9.7')
             dest=Path(tmp)/'staged.exe'
             update_manager.extract_verified(p,dest)
             self.assertEqual(dest.read_bytes(),fakeexe)
