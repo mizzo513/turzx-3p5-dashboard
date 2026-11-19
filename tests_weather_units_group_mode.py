@@ -115,7 +115,8 @@ class TextGroupAndWeatherUnits(unittest.TestCase):
         editor.vars['size'].set(original['size']+1)
         editor.on_field_edit()
         self.assertEqual(editor.text_styles['train_kan_arr_1']['color'],'#112233')
-        self.assertEqual(editor.text_styles['train_kan_arr_1']['size'],18)
+        self.assertEqual(editor.text_styles['train_kan_arr_1']['size'],
+                         props({},'train_kan_arr_1')['size']+1)
 
 
 if __name__=='__main__':
