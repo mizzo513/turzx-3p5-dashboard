@@ -39,7 +39,7 @@ class MarqueeScheduler:
     def candidate(self, tick: float, displayed_px: int, *, clock_due: bool,
                   second_fraction: float):
         """Return target pixel offset or None; suppressed frames are dropped."""
-        if self.started_at is None or tick < self.next_frame_at:
+        if self.started_at is None or tick + 1e-9 < self.next_frame_at:
             return None
         if tick < self.started_at:
             return None
