@@ -128,6 +128,24 @@ class SettingsWindow:
         self.vars['ir_route']=tk.StringVar(value=route_choices[0] if self.conf.get('ir_route','via_kanazawa')=='via_kanazawa' else route_choices[1])
         ttk.Combobox(main,textvariable=self.vars['ir_route'],values=route_choices,state='readonly',width=28).grid(row=r,column=1,sticky='w',padx=(10,0));r+=1
         ttk.Label(main,text='IR時刻表に収録された列車同士を金沢で接続。遅延・運休は反映しません。',foreground='#5c7184').grid(row=r,column=0,columnspan=3,sticky='w');r+=1
+        ttk.Separator(main).grid(row=r,column=0,columnspan=3,sticky='ew',pady=(9,6));r+=1
+        self.vars['rail_status_enabled']=tk.BooleanVar(
+            value=bool(self.conf.get('rail_status_enabled',True)))
+        ttk.Checkbutton(main,text='公式運行情報を表示（IRいしかわ鉄道・JR七尾線）',
+                        variable=self.vars['rail_status_enabled']).grid(
+                            row=r,column=0,columnspan=3,sticky='w',pady=(0,5));r+=1
+        self.field(main,'運行情報の確認間隔（分）','rail_status_update_minutes',r,'5');r+=1
+        links=ttk.Frame(main)
+        links.grid(row=r,column=0,columnspan=3,sticky='w',pady=(0,6));r+=1
+        ttk.Button(links,text='IR公式運行情報',
+                   command=lambda:webbrowser.open('https://www.ishikawa-railway.jp/ishi-train/')
+                   ).pack(side='left',padx=(0,7))
+        ttk.Button(links,text='JR七尾線 公式運行情報',
+                   command=lambda:webbrowser.open('https://trafficinfo.westjr.co.jp/?areaId=1')
+                   ).pack(side='left')
+        ttk.Label(main,text='取得失敗時は「未確認」。長文は乗換枠上部で横スクロールします。',
+                  foreground='#5c7184',wraplength=580).grid(
+                      row=r,column=0,columnspan=3,sticky='w',pady=(0,6));r+=1
         self.paired_fields(main,r,('列車更新間隔（秒）','train_update_seconds'),('表示列車数','train_count'));r+=1
         self.field(main,'Google Routes APIキー（任意）','google_maps_api_key',r,show='*');r+=1
         btnrow=ttk.Frame(main);btnrow.grid(row=r,column=0,columnspan=3,sticky='w',pady=(5,7));r+=1
@@ -246,6 +264,9 @@ class SettingsWindow:
             raise ValueError('時刻再同期間隔は5～1440分にしてください。')
         if not str(conf.get('ntp_server','')).strip():
             raise ValueError('NTPサーバー名が空欄です。')
+        conf['rail_status_update_minutes']=int(conf.get('rail_status_update_minutes',5))
+        if not 5<=conf['rail_status_update_minutes']<=60:
+            raise ValueError('運行情報の確認間隔は5〜60分にしてください。')
         conf['train_update_seconds']=int(conf['train_update_seconds'])
         choice=conf.get('ir_route','加賀笠間→金沢→津幡')
         mapping={'加賀笠間→金沢→津幡':'via_kanazawa','金沢→津幡':'kanazawa_tsubata'}
