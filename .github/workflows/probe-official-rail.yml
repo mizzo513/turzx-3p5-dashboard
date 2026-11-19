@@ -1,83 +1,16 @@
-name: Probe official rail status HTML
+name: Check official rail-status text compatibility
 on:
-  push:
-    paths: ['.github/workflows/probe-official-rail.yml']
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  probe:
+  status:
     runs-on: windows-latest
     steps:
-    - name: Checkout official text parser
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-    - name: Test parsed route-level notice against current public sources
-      shell: pwsh
-      run: |
-        $env:PYTHONIOENCODING = "utf-8"
-        python -X utf8 -c "from rail_official_status import fetch_official_rail_notice; d=fetch_official_rail_notice(); print('IR_STATE=', d.ir.state, 'NANAO_STATE=', d.nanao.state, 'DISPLAY=', d.text)"
-    - name: Check official public page availability
-      shell: pwsh
-      run: |
-        @'
-        import re
-        import json
-        import sys
-        sys.stdout.reconfigure(encoding='utf-8')
-        import urllib.request
-        from html.parser import HTMLParser
-        class Parser(HTMLParser):
-            def __init__(self):
-                super().__init__();self.parts=[];self.skip=0
-            def handle_starttag(self,tag,attrs):
-                if tag in ('script','style','noscript'):self.skip+=1
-            def handle_endtag(self,tag):
-                if tag in ('script','style','noscript') and self.skip:self.skip-=1
-            def handle_data(self,data):
-                if not self.skip:self.parts.append(data.strip())
-        urls=[
-          'https://www.ishikawa-railway.jp/train_state.json',
-          'https://www.ishikawa-railway.jp/',
-          'https://www.ishikawa-railway.jp/ishi-train/',
-          'https://trafficinfo.westjr.co.jp/?areaId=1',
-          'https://global.trafficinfo.westjr.co.jp/en/hokuriku',
-          'https://global.trafficinfo.westjr.co.jp/tc/hokuriku'
-        ]
-        for script_url in ['https://www.ishikawa-railway.jp/assets/js/operation_information.js?v=1']:
-            try:
-                req=urllib.request.Request(script_url,headers={'User-Agent':'Mozilla/5.0'})
-                with urllib.request.urlopen(req,timeout=10) as response:js=response.read(100000).decode('utf-8','replace')
-                print('operation_js_length',len(js))
-                print('operation_js',re.sub('\\s+',' ',js)[:7000])
-            except Exception as e:
-                print('operation_js_err',type(e).__name__,str(e)[:200])
-        for url in urls:
-            print('URL',url)
-            try:
-                req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36'})
-                with urllib.request.urlopen(req,timeout=12) as resp:raw=resp.read(500000);print('HTTP',resp.status,'bytes',len(raw),'charset',resp.headers.get_content_charset())
-                s=raw.decode('utf-8','replace')
-                if url.endswith('/train_state.json'):
-                    try:print('IR_JSON',json.loads(s))
-                    except Exception as e:print('json_err',str(e)[:120])
-                p=Parser();p.feed(s)
-                visible=' '.join(x for x in p.parts if x)
-                print('text_len',len(visible),'keywords',[(q,visible.find(q)) for q in ['IR運行情報','現在、平常','七尾線','Nanao Line','Nanao','平常運転','見合わせ']])
-                for needle in ['IR運行情報','現在、平常','七尾線','Nanao Line','Nanao','平常運転']:
-                    pos=visible.find(needle)
-                    if pos>=0:print('context',needle,visible[max(0,pos-65):pos+130])
-                if 'ishikawa-railway.jp' in url:
-                    print('ishi_html_context',re.sub('\\s+',' ',s[max(0,s.find('IR運行情報')-200):s.find('IR運行情報')+1000])[:700])
-                    scripts=re.findall(r'<script[^>]*src=[\\x22\\x27]([^\\x22\\x27]+)',s,re.I)
-                    print('ishi_scripts',scripts[:12])
-                    print('ishi_tags',re.findall(r'<script[^>]*>',s,re.I)[:12])
-                    print('ishi_status_code_context',re.findall(r'.{0,80}(?:HD_info|status_1|getStatus|run_info|operations).{0,180}',s,re.I)[:10])
-                    print('ishi_iframes',re.findall(r'<iframe[^>]*src=[\\x22\\x27]([^\\x22\\x27]+)',s,re.I)[:6])
-                if 'global.trafficinfo' in url and 'Nanao Line' in visible:
-                    i=visible.index('Nanao Line');print('nanao_500',visible[max(0,i-55):i+500])
-                if 'trafficinfo.westjr.co.jp' in url:
-                    scripts=re.findall(r'<script[^>]*src=[\x22\x27]([^\x22\x27]+)',s,re.I)
-                    print('js_sources_count',len(scripts),'js_source_names',[re.sub(r'.*/','',q).split('?')[0][:70] for q in scripts[:12]])
-            except Exception as ex:print('ERROR',type(ex).__name__,str(ex)[:130])
-        '@ | Set-Content -Path "$env:RUNNER_TEMP\probe_rail.py" -Encoding utf8
-        python "$env:RUNNER_TEMP\probe_rail.py"
+      - name: Checkout parser
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Read public IR and JR summaries
+        shell: pwsh
+        run: |
+          $env:PYTHONIOENCODING = "utf-8"
+          python -X utf8 -c "from rail_official_status import fetch_official_rail_notice; n=fetch_official_rail_notice(); print('IR',n.ir.state,'七尾線',n.nanao.state,'DISPLAY',n.text)"
