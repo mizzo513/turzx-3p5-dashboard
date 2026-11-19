@@ -14,6 +14,7 @@ import csv
 import copy
 import json
 import logging
+import math
 import os
 import re
 import sys
@@ -35,6 +36,7 @@ from internet_clock import InternetClock, query_ntp, NTP_SERVER
 from weatherapi_provider import fetch_weatherapi, WeatherAPIError
 from rail_official_status import RailNotice, fetch_official_rail_notice
 from marquee_scheduler import MarqueeScheduler
+from weather_fusion import fetch_weather_evidence, judge_weather
 from contextlib import nullcontext
 
 BUNDLE_ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))
@@ -83,6 +85,7 @@ DEFAULTS = {
     'train_update_seconds': 30,
     'rail_status_enabled': True,
     'rail_status_update_minutes': 5, # request public IR/JR sources at most every 5 min
+    'rail_scroll_speed_px_s': 9.4, # marquee travel in pixels/second; 0 = stop
     'train_count': 3,
     'train_from': '金沢',
     'train_to': '津幡',
@@ -222,6 +225,9 @@ class Weather:
     raw_condition_code: int | None = None
     precip_mm: float | None = None # diagnostic only; never overrides conditions
     data_time: datetime | None = None
+    judgement_source: str = ''
+    judgement_observed_at: str = ''
+    judgement_note: str = ''
 
 
 @dataclass
@@ -1007,6 +1013,10 @@ def read_live_settings():
     fresh['weather_update_minutes']=max(5,int(fresh['weather_update_minutes']))
     fresh['rail_status_update_minutes']=max(5,min(60,int(fresh.get('rail_status_update_minutes',5))))
     fresh['rail_status_enabled']=bool(fresh.get('rail_status_enabled',True))
+    speed=float(fresh.get('rail_scroll_speed_px_s',9.4))
+    if not math.isfinite(speed) or not 0<=speed<=60:
+        raise ValueError('横スクロール速度は0～60px/秒です')
+    fresh['rail_scroll_speed_px_s']=speed
     if not str(fresh.get('port','')).strip():
         raise ValueError('Empty COM port')
     validate_styles(fresh)
@@ -1061,6 +1071,7 @@ def release_singleton_lock(fh):
 def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds=0):
     rail_notice=RailNotice()
     weather=Weather(city=conf['weather_city'],provider=conf.get('weather_provider','weatherapi'))
+    base_weather=weather
     train=TrainState([], '読込中',conf['train_source'])
     if preview_demo:
         # Demo data exists only behind an explicit '--demo-preview' option, not live mode.
@@ -1087,6 +1098,12 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
     notice_every=max(5,int(conf.get('rail_status_update_minutes',5)))*60
     port_name=conf['port']
     future=None
+    fusion_future=None
+    fusion_future_key=None
+    fusion_evidence=None
+    fusion_evidence_at=0.0
+    fusion_due=0.0
+    fusion_error=''
     rail_future=None
     rail_due=0.0
     weather_due=0.0
@@ -1095,6 +1112,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
     marquee_px=0
     previous_marquee_px=0
     marquee=MarqueeScheduler()
+    marquee.pixels_per_second=float(conf.get('rail_scroll_speed_px_s',9.4))
     base_logical=None
     scroll_transfer_ms=0.0
     clock_display_lag_ms=0.0
@@ -1176,9 +1194,15 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                         last_settings_hash=current_hash
                         logger.info('Live settings applied; weather=%s, port=%s, clock=%s',conf['weather_city'],conf['port'],conf.get('clock_update_mode'))
                         if any(prev_conf.get(k)!=conf.get(k) for k in ('weather_city','weather_latitude','weather_longitude','weather_update_minutes','weather_provider','weatherapi_key')):
-                            weather=Weather(city=conf['weather_city'],provider=conf.get('weather_provider','weatherapi'))
+                            base_weather=Weather(city=conf['weather_city'],provider=conf.get('weather_provider','weatherapi'))
+                            weather=base_weather
                             weather_due=0.0
-                            future=None  # the old in-flight request is ignored
+                            future=None  # old provider requests are ignored
+                            if any(prev_conf.get(k)!=conf.get(k) for k in ('weather_city','weather_latitude','weather_longitude')):
+                                fusion_due=0.0
+                                fusion_evidence=None
+                                fusion_evidence_at=0.0
+                                fusion_future=None  # old asynchronous coordinates ignored
                         if any(prev_conf.get(k)!=conf.get(k) for k in ('rail_status_enabled','rail_status_update_minutes')):
                             notice_future=None
                             notice_due=0.0
@@ -1195,6 +1219,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                         weather_every=max(5,int(conf['weather_update_minutes']))*60
                         train_every=max(10,int(conf['train_update_seconds']))
                         notice_every=max(5,int(conf.get('rail_status_update_minutes',5)))*60
+                        marquee.pixels_per_second=float(conf.get('rail_scroll_speed_px_s',9.4))
                         if port_name!=conf['port']:
                             port_name=conf['port']
                             if device is not None:
@@ -1216,14 +1241,52 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                 weather_due=tick+weather_every
             if future is not None and future.done():
                 try:
-                    weather=future.result()
-                    logger.info('Weather updated for %s: %s degC',weather.city,weather.temperature)
+                    base_weather=future.result()
+                    logger.info('Weather updated for %s: %s degC',base_weather.city,base_weather.temperature)
                 except Exception as exc:
                     logger.error('Weather API unavailable: %s',exc)
-                    weather.error=str(exc)[:60]
-                    if weather.fetched is None:weather.city=conf['weather_city']
+                    base_weather.error=str(exc)[:60]
+                    if base_weather.fetched is None:base_weather.city=conf['weather_city']
                     weather_due=min(weather_due,tick+60)
                 future=None
+
+            # Independent observation fetch: 5-minute cadence, never blocks
+            # the clock or the USB transport. Only current icon/text is fused.
+            evidence_key=(float(conf['weather_latitude']),float(conf['weather_longitude']))
+            if fusion_future is None and tick>=fusion_due:
+                fusion_future_key=evidence_key
+                fusion_future=pool.submit(fetch_weather_evidence,dict(conf))
+                fusion_due=tick+300.0
+            if fusion_future is not None and fusion_future.done():
+                try:
+                    obtained=fusion_future.result()
+                    if fusion_future_key==evidence_key:
+                        fusion_evidence=obtained
+                        fusion_evidence_at=tick
+                        fusion_error='; '.join(obtained.get('errors',[]))[:350]
+                        logger.info('Current-weather observations: model=%s, radar=%s, amedas=%s; errors=%s',
+                                    bool(obtained.get('model')),
+                                    bool((obtained.get('observations') or {}).get('radar')),
+                                    bool((obtained.get('observations') or {}).get('amedas')),
+                                    fusion_error)
+                except Exception as exc:
+                    if fusion_future_key==evidence_key:
+                        fusion_error=f'{type(exc).__name__}: {str(exc)[:160]}'
+                        fusion_due=min(fusion_due,tick+60)
+                        logger.warning('Weather fusion unavailable: %s',fusion_error)
+                fusion_future=None
+                fusion_future_key=None
+
+            weather=copy.copy(base_weather)
+            if fusion_evidence and tick-fusion_evidence_at<900:
+                chosen=judge_weather(base_weather,fusion_evidence,now=now)
+                if chosen is not None:
+                    weather.code=chosen.code
+                    weather.condition_text=chosen.label
+                    weather.judgement_source=chosen.source
+                    weather.judgement_observed_at=chosen.observed_at
+                    weather.judgement_note=chosen.note
+
             if rail_future is None and tick>=rail_due:
                 if conf['train_source']=='google_transit':
                     rail_due=tick+max(5,int(conf['google_refresh_minutes']))*60
@@ -1446,6 +1509,10 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                                     weather_city=weather.city,
                                     weather_provider=weather.provider,
                                     weather_condition=weather.condition_text or weather_description(weather.code),
+                                    weather_judgement_source=weather.judgement_source or weather.provider,
+                                    weather_observation_at=weather.judgement_observed_at,
+                                    weather_observation_error=fusion_error,
+                                    rail_scroll_speed_px_s=marquee.pixels_per_second,
                                     weather_status='OK' if weather.error is None else '待機/エラー',
                                     train_status=train.status,
                                     rail_status=rail_notice.text,
