@@ -46,7 +46,7 @@ class TestSettingsNotebook(unittest.TestCase):
                   if isinstance(row,ttk.Frame)
                   for w in row.winfo_children() if isinstance(w,ttk.Button)]
         self.assertEqual(commands,
-            ['設定を即時反映','天気APIテスト','表示開始','表示停止','ディスプレイ再接続','終了'])
+            ['設定を即時反映','表示開始','表示停止','ディスプレイ再接続','終了'])
 
     def test_update_button_is_next_to_title_and_visible_across_tabs(self):
         from tkinter import ttk
@@ -94,7 +94,10 @@ class TestSettingsNotebook(unittest.TestCase):
             style.lookup(tab_style,'background',('!selected',)))
         self.assertEqual(style.lookup(tab_style,'foreground',('selected',)),
                          '#FFFFFF')
-        self.assertGreaterEqual(self.gui._tab_width_px,140)
+        self.assertEqual(
+            self.gui._tab_width_px,
+            max(self.gui._tab_font.measure(self.gui.tabs.tab(p,'text'))
+                for p in self.gui.tabs.tabs())+44)
         widths=[]
         for page in self.gui.tabs.tabs():
             label=self.gui.tabs.tab(page,'text')
@@ -107,6 +110,57 @@ class TestSettingsNotebook(unittest.TestCase):
             widths.append(self.gui._tab_font.measure(label)+left+right)
         self.assertEqual(len(set(widths)),1)
         self.assertEqual(widths[0],self.gui._tab_width_px)
+
+    def test_ten_palettes_switch_color_only_and_are_saved(self):
+        from theme_presets import PRESETS
+        from tkinter import ttk
+        self.assertEqual(len(PRESETS),10)
+        style=ttk.Style(self.root)
+        pages=self.gui.tabs.tabs()
+        before=[self.gui.tabs.tab(page,'padding') for page in pages]
+        before_width=self.gui._tab_width_px
+        for theme,colors in PRESETS.items():
+            self.gui.vars['settings_color_preset'].set(theme)
+            self.gui._on_palette_change()
+            self.assertEqual(
+                style.lookup('TURZX.TNotebook.Tab','background',('selected',)),
+                colors['selected'])
+            self.assertEqual(
+                style.lookup('TURZX.TNotebook.Tab','foreground',('selected',)),
+                colors['selected_ink'])
+            self.assertNotEqual(colors['selected'],colors['tab'])
+            self.assertEqual(before_width,self.gui._tab_width_px)
+            self.assertEqual(before,
+                             [self.gui.tabs.tab(page,'padding') for page in pages])
+            self.assertEqual(style.map('TURZX.TNotebook.Tab','padding'),[])
+            self.assertEqual(style.map('TURZX.TNotebook.Tab','font'),[])
+            self.assertEqual(self.gui.read_form()['settings_color_preset'],theme)
+        self.gui.vars['settings_color_preset'].set('存在しないテーマ')
+        with self.assertRaises(ValueError):
+            self.gui.read_form()
+
+    def test_weather_api_button_is_inside_weather_tab_only(self):
+        from tkinter import ttk
+        weather=self.gui.tabs.tabs()[1]
+        canvas=self.gui._tab_canvases[weather]
+        self.assertEqual(self.gui.weather_test_button.master.master,canvas)
+        self.assertEqual(self.gui.weather_test_button.cget('text'),'天気APIテスト')
+        self.assertEqual(self.gui.weather_test_button.winfo_manager(),'grid')
+        # It must never be one of the globally-visible footer buttons.
+        footer=[w for w in self.root.winfo_children()
+                if isinstance(w,ttk.Frame) and w.grid_info().get('row')==2][0]
+        controls=[w.cget('text') for child in footer.winfo_children()
+                  if isinstance(child,ttk.Frame)
+                  for w in child.winfo_children() if isinstance(w,ttk.Button)]
+        self.assertNotIn('天気APIテスト',controls)
+
+    def test_first_leg_route_can_be_selected_and_saved(self):
+        choices=('加賀笠間→金沢→津幡','加賀笠間→金沢','金沢→津幡')
+        combo=self.gui.vars['ir_route']
+        for display,mapped in zip(choices,('via_kanazawa',
+                                         'kaga_kanazawa','kanazawa_tsubata')):
+            combo.set(display)
+            self.assertEqual(self.gui.read_form()['ir_route'],mapped)
 
     def test_marquee_pixels_per_second_edit_and_validation(self):
         self.assertIn('rail_scroll_speed_px_s',self.gui.vars)
