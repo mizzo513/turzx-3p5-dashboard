@@ -154,8 +154,13 @@ class SettingsWindow:
         combo.grid(row=r,column=1,sticky='w',padx=(10,0));r+=1
         ttk.Label(main,text='ir_schedule：同梱2026/3/14改正ダイヤ / csv・json：外部連携 / google_transit：APIキー',foreground='#5c7184',wraplength=710).grid(row=r,column=0,columnspan=3,sticky='w',pady=(0,5));r+=1
         ttk.Label(main,text='IR時刻表の表示区間').grid(row=r,column=0,sticky='w',pady=5)
-        route_choices=('加賀笠間→金沢→津幡','金沢→津幡')
-        self.vars['ir_route']=tk.StringVar(value=route_choices[0] if self.conf.get('ir_route','via_kanazawa')=='via_kanazawa' else route_choices[1])
+        route_choices=('加賀笠間→金沢→津幡','加賀笠間→金沢','金沢→津幡')
+        route_labels={'via_kanazawa':route_choices[0],
+                      'kaga_kanazawa':route_choices[1],
+                      'kanazawa_tsubata':route_choices[2]}
+        self.vars['ir_route']=tk.StringVar(
+            value=route_labels.get(self.conf.get('ir_route','via_kanazawa'),
+                                   route_choices[0]))
         ttk.Combobox(main,textvariable=self.vars['ir_route'],values=route_choices,state='readonly',width=28).grid(row=r,column=1,sticky='w',padx=(10,0));r+=1
         ttk.Label(main,text='IR時刻表に収録された列車同士を金沢で接続。遅延・運休は反映しません。',foreground='#5c7184').grid(row=r,column=0,columnspan=3,sticky='w');r+=1
         ttk.Separator(main).grid(row=r,column=0,columnspan=3,sticky='ew',pady=(9,6));r+=1
@@ -403,7 +408,7 @@ class SettingsWindow:
         conf['train_update_seconds']=int(conf['train_update_seconds'])
         validate_preset(conf.get('settings_color_preset',DEFAULT_PRESET))
         choice=conf.get('ir_route','加賀笠間→金沢→津幡')
-        mapping={'加賀笠間→金沢→津幡':'via_kanazawa','金沢→津幡':'kanazawa_tsubata'}
+        mapping={'加賀笠間→金沢→津幡':'via_kanazawa','加賀笠間→金沢':'kaga_kanazawa','金沢→津幡':'kanazawa_tsubata'}
         if choice not in mapping:raise ValueError('IR時刻表の表示区間が不正です')
         conf['ir_route']=mapping[choice]
         conf['train_count']=int(conf['train_count'])
