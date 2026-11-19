@@ -53,6 +53,10 @@ class SettingsWindow:
         r=0
         ttk.Label(main,text='表示・USB・時計',font=('Yu Gothic UI',11,'bold')).grid(
             row=r,column=0,columnspan=3,sticky='w',pady=(0,6));r+=1
+        self.vars['auto_start_display']=tk.BooleanVar(value=bool(self.conf.get('auto_start_display',True)))
+        ttk.Checkbutton(main,text='アプリ起動時に実機への表示を自動開始',
+                        variable=self.vars['auto_start_display']).grid(
+                            row=r,column=0,columnspan=3,sticky='w',pady=(0,5));r+=1
         self.field(main,'USBポート','port',r,'AUTO');r+=1
         ttk.Label(main,text='AUTO：USB35INCHIPSV2を自動認識。接続機が複数ある場合はCOM番号を入力',foreground='#5c7184').grid(row=r,column=0,columnspan=3,sticky='w');r+=1
         ttk.Separator(main).grid(row=r,column=0,columnspan=3,sticky='ew',pady=12);r+=1
@@ -153,6 +157,8 @@ class SettingsWindow:
         self.root.after(800,self.poll_runtime)
         if self.conf.get('auto_update_check',True):
             self.root.after(1800,lambda:self.check_github_update(silent=True))
+        if self.conf.get('auto_start_display',True):
+            self.root.after(350,self._autostart_engine)
 
     def _create_settings_tab(self,title):
         """Create an independent scrollable page for compact or high-DPI screens."""
@@ -415,6 +421,24 @@ class SettingsWindow:
                 self.status.set(status_msg)
         try:self.root.after(800,self.poll_runtime)
         except tk.TclError:pass
+
+    def _autostart_engine(self, attempt=0):
+        """Run the saved display automatically without opening a second engine.
+
+        During an app upgrade, the previous version's engine may still be
+        stopping. Allow it to exit before launching the new EXE engine.
+        """
+        try:
+            if not self.vars['auto_start_display'].get():
+                return
+            state=self.runtime_state()
+            if state:
+                if state.get('app_version') != APP_VERSION and attempt < 20:
+                    self.root.after(500,lambda:self._autostart_engine(attempt+1))
+                return
+            self.start()
+        except tk.TclError:
+            return
 
     def start(self):
         if not self.save():return
