@@ -63,7 +63,9 @@ class KagaKasamaRouteTests(unittest.TestCase):
                           'train_time','train_kan_arr','train_kan_dep','train_arrive','train_detail'):
                 self.assertIn(f'text:{field}_{n}',hit)
             x0,y0,x1,y1=hit[f'text:train_time_{n}']
-            self.assertTrue(170<=x0<x1<245 and 100+68*(n-1)<y0<y1<127+68*(n-1))
+            self.assertTrue(170<=x0<x1<245)
+            panel=hit[f'panel:train_{n}']
+            self.assertTrue(panel[1]<=y0<y1<=panel[3]+1,(n,(x0,y0,x1,y1),panel))
 
     def test_diagnostics_shows_interchange_and_platform(self):
         info=app.train_diagnostics(self.now,self.conf)
