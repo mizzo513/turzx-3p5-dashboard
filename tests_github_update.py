@@ -10,6 +10,11 @@ from pathlib import Path
 from unittest.mock import patch
 import github_updater as gh
 import update_manager
+from version_info import APP_VERSION
+
+parts = [int(v) for v in APP_VERSION.split('.')]
+NEXT_VERSION = f'{parts[0]}.{parts[1]}.{parts[2]+1}'
+AFTER_NEXT = f'{parts[0]}.{parts[1]}.{parts[2]+2}'
 
 
 class FakeResponse:
@@ -20,7 +25,7 @@ class FakeResponse:
     def read(self,n=-1):return self.buf.read(n)
 
 
-def fake_release(version='3.9.7',data=b'zipdata',url=None,digest=None):
+def fake_release(version=NEXT_VERSION,data=b'zipdata',url=None,digest=None):
     tag='v'+version
     filename=f'TURZX_Update_{tag}.zip'
     return dict(tag_name=tag,draft=False,prerelease=False,name='Release '+tag,
@@ -29,7 +34,7 @@ def fake_release(version='3.9.7',data=b'zipdata',url=None,digest=None):
                 digest=digest if digest is not None else 'sha256:'+hashlib.sha256(data).hexdigest())])
 
 
-def valid_zip(version='3.9.7'):
+def valid_zip(version=NEXT_VERSION):
     exe=b'MZ'+bytes(range(256))*8
     meta=dict(app_id=update_manager.APP_ID,filename=update_manager.EXE_NAME,
               version=version,size=len(exe),sha256=hashlib.sha256(exe).hexdigest())
@@ -44,11 +49,11 @@ class GitHubUpdaterTests(unittest.TestCase):
     def test_correct_release_and_newer(self):
         payload=valid_zip()
         release=gh._get_release_from_json(fake_release(data=payload))
-        self.assertEqual(release.version,'3.9.7')
+        self.assertEqual(release.version,NEXT_VERSION)
         self.assertTrue(gh.is_newer(release))
 
     def test_up_to_date(self):
-        release=gh._get_release_from_json(fake_release('3.9.6',data=b'x'*2048))
+        release=gh._get_release_from_json(fake_release(APP_VERSION,data=b'x'*2048))
         self.assertFalse(gh.is_newer(release))
 
     def test_reject_foreign_url(self):
@@ -79,8 +84,8 @@ class GitHubUpdaterTests(unittest.TestCase):
             self.assertFalse((Path(tmp)/'update.zip').exists())
 
     def test_version_mismatch_in_zip(self):
-        payload=valid_zip('3.9.8')
-        release=gh._get_release_from_json(fake_release('3.9.7',data=payload))
+        payload=valid_zip(AFTER_NEXT)
+        release=gh._get_release_from_json(fake_release(NEXT_VERSION,data=payload))
         with tempfile.TemporaryDirectory() as tmp, patch.object(gh.urllib.request,'urlopen',return_value=FakeResponse(payload)):
             with self.assertRaisesRegex(ValueError,'バージョン'):
                 gh.download_verified_update(release,Path(tmp)/'update.zip')
@@ -89,7 +94,7 @@ class GitHubUpdaterTests(unittest.TestCase):
         payload=valid_zip()
         response=json.dumps(fake_release(data=payload)).encode()
         with patch.object(gh.urllib.request,'urlopen',return_value=FakeResponse(response)):
-            self.assertEqual(gh.fetch_latest_release().version,'3.9.7')
+            self.assertEqual(gh.fetch_latest_release().version,NEXT_VERSION)
 
 
 if __name__=='__main__':
