@@ -20,6 +20,7 @@ from runtime_ipc import get_runtime_status, request_stop, request_reconnect
 from text_layout import validate_styles
 from panel_layout import validate_panels
 from version_info import APP_VERSION
+from theme_presets import PRESETS, DEFAULT_PRESET, palette, validate_preset
 
 
 class SettingsWindow:
@@ -83,6 +84,20 @@ class SettingsWindow:
         ttk.Label(main,text='compact：秒の数字だけ更新 / safe_strip：従来の横幅全体更新（文字崩れ時）',foreground='#5c7184').grid(row=r,column=0,columnspan=3,sticky='w');r+=1
         main=manage_tab
         r=0
+        ttk.Label(main,text='設定画面の配色プリセット').grid(
+            row=r,column=0,sticky='w',pady=(1,6))
+        self.vars['settings_color_preset']=tk.StringVar(
+            value=self.conf.get('settings_color_preset',DEFAULT_PRESET)
+            if self.conf.get('settings_color_preset',DEFAULT_PRESET) in PRESETS
+            else DEFAULT_PRESET)
+        self.theme_combo=ttk.Combobox(
+            main,textvariable=self.vars['settings_color_preset'],
+            values=list(PRESETS),state='readonly',width=24)
+        self.theme_combo.grid(row=r,column=1,sticky='w',padx=(10,0));r+=1
+        self.theme_combo.bind('<<ComboboxSelected>>',self._on_palette_change)
+        ttk.Label(main,text='選択すると画面の配色をプレビューします。保存すると次回も適用されます。',
+                  foreground='#5c7184',wraplength=610).grid(
+                      row=r,column=0,columnspan=3,sticky='w',pady=(0,10));r+=1
         ttk.Label(main,text='レイアウト編集',font=('Yu Gothic UI',11,'bold')).grid(
             row=r,column=0,columnspan=3,sticky='w',pady=(0,8));r+=1
         ttk.Button(main,text='文字・枠の配置／サイズ／色を編集',command=self.open_layout_editor).grid(row=r,column=0,columnspan=3,sticky='w',pady=(7,0));r+=1
@@ -124,6 +139,8 @@ class SettingsWindow:
         r+=1
         self.paired_fields(main,r,('緯度','weather_latitude'),('経度','weather_longitude'));r+=1
         self.field(main,'天気更新間隔（分）','weather_update_minutes',r);r+=1
+        self.weather_test_button=ttk.Button(main,text='天気APIテスト',command=self.test_weather)
+        self.weather_test_button.grid(row=r,column=0,columnspan=3,sticky='w',pady=(5,7));r+=1
         ttk.Label(main,text='現在天候は総合判定：気象庁降水ナウキャスト → 近隣アメダス → Open-Meteo。'
                             '実況が利用できなければ既存の天候判定へ戻します（約5分ごと）。',
                   foreground='#21709c',wraplength=610).grid(row=r,column=0,columnspan=3,sticky='w',pady=(5,6));r+=1
@@ -181,11 +198,11 @@ class SettingsWindow:
         row=ttk.Frame(footer)
         row.grid(row=2,column=0,sticky='ew')
         ttk.Button(row,text='設定を即時反映',command=self.save).pack(side='left',padx=(0,7))
-        ttk.Button(row,text='天気APIテスト',command=self.test_weather).pack(side='left',padx=(0,7))
         ttk.Button(row,text='表示開始',command=self.start).pack(side='left',padx=(0,7))
         ttk.Button(row,text='表示停止',command=self.stop).pack(side='left',padx=(0,7))
         ttk.Button(row,text='ディスプレイ再接続',command=self.reconnect).pack(side='left',padx=(0,7))
         ttk.Button(row,text='終了',command=self.close).pack(side='right')
+        self._apply_palette(self.vars['settings_color_preset'].get())
         root.protocol('WM_DELETE_WINDOW',self.close)
         self.root.after(800,self.poll_runtime)
         if self.conf.get('auto_update_check',True):
@@ -194,32 +211,79 @@ class SettingsWindow:
             self.root.after(350,self._autostart_engine)
 
     def _configure_tab_appearance(self):
-        """Readable tab palette on Windows, including inactive tabs.
+        """Initialize a pixel-stable tab font, then apply saved GUI palette."""
+        self._tab_font=tkfont.Font(
+            self.root,family='Yu Gothic UI',size=10,weight='bold')
+        self._apply_palette(self.conf.get('settings_color_preset',DEFAULT_PRESET))
 
-        Native Vista themed tabs may ignore ttk background colors; the
-        standard Clam theme honors foreground/background mappings. Apply it
-        only to this GUI's Tk interpreter (not to the LCD framebuffer).
-        """
+    def _on_palette_change(self,_event=None):
+        self._apply_palette(self.vars['settings_color_preset'].get())
+
+    def _apply_palette(self,name):
+        """Apply colors only. Never remap font, padding, or selected geometry."""
+        p=palette(name)
         style=ttk.Style(self.root)
-        if 'clam' in style.theme_names():
+        if 'clam' in style.theme_names() and style.theme_use()!='clam':
             style.theme_use('clam')
-        self._tab_font=tkfont.Font(self.root,family='Yu Gothic UI',size=10,weight='bold')
-        style.configure('TURZX.TNotebook',
-                        background='#E3EBF2',borderwidth=1,
+        self.root.configure(bg=p['window'])
+        style.configure('TFrame',background=p['surface'])
+        style.configure('TLabel',background=p['surface'],foreground=p['ink'])
+        style.configure('TLabelFrame',background=p['surface'],foreground=p['ink'])
+        style.configure('TLabelFrame.Label',background=p['surface'],foreground=p['ink'])
+        style.configure('TCheckbutton',background=p['surface'],foreground=p['ink'])
+        style.map('TCheckbutton',
+                  background=[('active',p['surface'])],
+                  foreground=[('disabled',p['muted'])])
+        style.configure('TButton',background=p['button'],
+                        foreground=p['button_ink'],bordercolor=p['border'])
+        style.map('TButton',
+                  background=[('active',p['hover']),('pressed',p['selected'])],
+                  foreground=[('active',p['hover_ink']),('pressed',p['selected_ink'])])
+        style.configure('TEntry',fieldbackground=p['field'],
+                        foreground=p['ink'],bordercolor=p['border'])
+        style.configure('TCombobox',fieldbackground=p['field'],
+                        foreground=p['ink'],background=p['button'],
+                        arrowcolor=p['ink'],bordercolor=p['border'])
+        style.map('TCombobox',
+                  fieldbackground=[('readonly',p['field'])],
+                  foreground=[('readonly',p['ink'])],
+                  background=[('readonly',p['button'])])
+        style.configure('TScrollbar',background=p['button'],
+                        troughcolor=p['window'],arrowcolor=p['ink'])
+        style.configure('TSeparator',background=p['border'])
+        style.configure('TURZX.TNotebook',background=p['window'],
+                        bordercolor=p['border'],borderwidth=1,
                         tabmargins=(3,4,3,0))
         style.configure('TURZX.TNotebook.Tab',
-                        background='#CEDAE5',foreground='#23394F',
-                        font=self._tab_font,relief='raised',
-                        borderwidth=1,padding=(14,8))
+                        background=p['tab'],foreground=p['ink'],
+                        font=self._tab_font,
+                        relief='flat',borderwidth=1,
+                        padding=(22,8),bordercolor=p['border'])
         style.map('TURZX.TNotebook.Tab',
-                  background=[('selected','#17638D'),
-                              ('active','#AACFE3'),
-                              ('!selected','#CEDAE5')],
-                  foreground=[('selected','#FFFFFF'),
-                              ('active','#123F58'),
-                              ('!selected','#23394F')],
-                  bordercolor=[('selected','#0E4B6B'),
-                               ('!selected','#7997AC')])
+                  background=[('selected',p['selected']),
+                              ('active',p['hover']),
+                              ('!selected',p['tab'])],
+                  foreground=[('selected',p['selected_ink']),
+                              ('active',p['hover_ink']),
+                              ('!selected',p['ink'])],
+                  bordercolor=[('selected',p['border']),
+                               ('!selected',p['border'])])
+        # Canvas is a classic Tk widget rather than ttk; recolor separately.
+        for canvas in getattr(self,'_tab_canvases',{}).values():
+            canvas.configure(background=p['surface'])
+        # Existing secondary-label foreground overrides should stay readable
+        # in dark as well as light palettes; record original intent once.
+        def recolor(widget):
+            if isinstance(widget,ttk.Label):
+                if not hasattr(widget,'_turzx_original_fg'):
+                    widget._turzx_original_fg=str(widget.cget('foreground')).upper()
+                if widget._turzx_original_fg in ('#5C7184','#52677C'):
+                    widget.configure(foreground=p['muted'])
+                elif widget._turzx_original_fg=='#21709C':
+                    widget.configure(foreground=p['accent'])
+            for child in widget.winfo_children():
+                recolor(child)
+        recolor(self.root)
 
     def _equalize_tab_widths(self):
         """Use equal pixel widths, regardless of the Japanese label length.
@@ -231,7 +295,7 @@ class SettingsWindow:
         if not pages:
             return
         labels=[self.tabs.tab(page,'text') for page in pages]
-        cell=max(140,max(self._tab_font.measure(label) for label in labels)+34)
+        cell=max(self._tab_font.measure(label) for label in labels)+44
         self._tab_width_px=cell
         for page,label in zip(pages,labels):
             remaining=cell-self._tab_font.measure(label)
@@ -337,6 +401,7 @@ class SettingsWindow:
         if not math.isfinite(conf['rail_scroll_speed_px_s']) or not 0<=conf['rail_scroll_speed_px_s']<=60:
             raise ValueError('横スクロール速度は0～60px/秒で指定してください。')
         conf['train_update_seconds']=int(conf['train_update_seconds'])
+        validate_preset(conf.get('settings_color_preset',DEFAULT_PRESET))
         choice=conf.get('ir_route','加賀笠間→金沢→津幡')
         mapping={'加賀笠間→金沢→津幡':'via_kanazawa','金沢→津幡':'kanazawa_tsubata'}
         if choice not in mapping:raise ValueError('IR時刻表の表示区間が不正です')
