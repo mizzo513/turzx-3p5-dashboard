@@ -936,6 +936,8 @@ def read_live_settings():
     if fresh.get('ir_route') not in ('via_kanazawa','kanazawa_tsubata'): fresh['ir_route']='via_kanazawa'
     fresh['train_update_seconds']=max(10,int(fresh['train_update_seconds']))
     fresh['weather_update_minutes']=max(5,int(fresh['weather_update_minutes']))
+    fresh['rail_status_update_minutes']=max(5,min(60,int(fresh.get('rail_status_update_minutes',5))))
+    fresh['rail_status_enabled']=bool(fresh.get('rail_status_enabled',True))
     if not str(fresh.get('port','')).strip():
         raise ValueError('Empty COM port')
     validate_styles(fresh)
@@ -988,6 +990,7 @@ def release_singleton_lock(fh):
 
 
 def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds=0):
+    rail_notice=RailNotice()
     weather=Weather(city=conf['weather_city'],provider=conf.get('weather_provider','weatherapi'))
     train=TrainState([], '読込中',conf['train_source'])
     if preview_demo:
@@ -1012,11 +1015,17 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
 
     weather_every=max(5,int(conf['weather_update_minutes']))*60
     train_every=max(10,int(conf['train_update_seconds']))
+    notice_every=max(5,int(conf.get('rail_status_update_minutes',5)))*60
     port_name=conf['port']
     future=None
     rail_future=None
     rail_due=0.0
     weather_due=0.0
+    notice_future=None
+    notice_due=0.0
+    marquee_px=0
+    previous_marquee_px=0
+    next_marquee=0.0
     prev_frame=None
     prev_data_signature=None
     last_hm=None
@@ -1031,7 +1040,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
     ntp_future=None
     ntp_future_server=None
     ntp_due=0.0
-    pool=ThreadPoolExecutor(max_workers=3)
+    pool=ThreadPoolExecutor(max_workers=4)
     try:
         try:STOP_PATH.unlink(missing_ok=True)
         except Exception:pass
@@ -1081,6 +1090,12 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                             weather=Weather(city=conf['weather_city'],provider=conf.get('weather_provider','weatherapi'))
                             weather_due=0.0
                             future=None  # the old in-flight request is ignored
+                        if any(prev_conf.get(k)!=conf.get(k) for k in ('rail_status_enabled','rail_status_update_minutes')):
+                            notice_future=None
+                            notice_due=0.0
+                            marquee_px=0
+                            if not conf.get('rail_status_enabled',True):
+                                rail_notice=RailNotice('運行情報：表示OFF')
                         if any(prev_conf.get(k)!=conf.get(k) for k in ('ntp_server','ntp_sync_minutes')):
                             ntp_due=0.0
                         if any(prev_conf.get(k)!=conf.get(k) for k in ('train_source','ir_route','train_from','train_to','train_update_seconds','train_count','google_maps_api_key','google_refresh_minutes')):
@@ -1089,6 +1104,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                             rail_future=None
                         weather_every=max(5,int(conf['weather_update_minutes']))*60
                         train_every=max(10,int(conf['train_update_seconds']))
+                        notice_every=max(5,int(conf.get('rail_status_update_minutes',5)))*60
                         if port_name!=conf['port']:
                             port_name=conf['port']
                             if device is not None:
@@ -1131,13 +1147,44 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                 current=[t for t in train.trains if t.depart>=now]
                 train=TrainState(current,'API経路(予定)' if current else '次の便を再検索中',train.source,train.loaded,train.error)
 
-            frame=render_physical(now,weather,train,conf)
+            # Public IR JSON and JR West official text at a polite five-minute
+            # interval. Unknown/failed sources NEVER imply normal operation.
+            if conf.get('rail_status_enabled',True):
+                if notice_future is None and tick>=notice_due:
+                    notice_future=pool.submit(fetch_official_rail_notice)
+                    notice_due=tick+notice_every
+                if notice_future is not None and notice_future.done():
+                    try:
+                        current_notice=notice_future.result()
+                        if current_notice.text != rail_notice.text:
+                            marquee_px=0
+                            next_marquee=tick+2.0
+                        rail_notice=current_notice
+                        logger.info('Rail sources: IR=%s, Nanao=%s',
+                                    rail_notice.ir.state,rail_notice.nanao.state)
+                    except Exception as exc:
+                        logger.warning('Rail status unavailable: %s',type(exc).__name__)
+                        rail_notice=RailNotice('運行情報：未確認')
+                        notice_due=min(notice_due,tick+60)
+                    notice_future=None
+            else:
+                rail_notice=RailNotice('運行情報：表示OFF')
+
+            scrolling=notice_overflows(conf,rail_notice.text)
+            if scrolling and tick>=next_marquee:
+                marquee_px+=16
+                next_marquee=tick+1.7
+            if not scrolling and marquee_px:
+                marquee_px=0
+            marquee_changed=(marquee_px!=previous_marquee_px)
+            frame=render_physical(now,weather,train,conf,
+                                  rail_notice=rail_notice,marquee_px=marquee_px)
             data_signature=(
                 weather.city,weather.temperature,weather.high,weather.low,weather.precip,
                 weather.humidity,weather.wind,weather.code,weather.error,
                 weather.provider,weather.condition_text,weather.raw_condition_code,
                 weather.fetched.strftime('%H:%M') if weather.fetched else None,
-                train.status, tuple((t.depart.isoformat(),t.arrive.isoformat(),t.line,t.platform) for t in train.trains),
+                train.status, rail_notice.text, tuple((t.depart.isoformat(),t.arrive.isoformat(),t.line,t.platform) for t in train.trains),
                 now.date()
             )
             changed=prev_frame is None or data_signature!=prev_data_signature
@@ -1146,7 +1193,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
             hm_due=hm!=last_hm
             sec_due=sec!=last_seconds
             if no_usb:
-                if changed or hm_due or sec_due:
+                if changed or hm_due or sec_due or marquee_changed:
                     frame.save(PREVIEW)
             else:
                 if device is None and tick>=next_retry:
@@ -1158,7 +1205,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                     except Exception as exc:
                         logger.error('LCD disconnected: %s',exc)
                         device=None;next_retry=tick+5
-                if device is not None and (changed or hm_due or sec_due):
+                if device is not None and (changed or hm_due or sec_due or marquee_changed):
                     try:
                         if changed:
                             send_bitmap(device,frame,0,0)
@@ -1174,8 +1221,11 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                         elif hm_due:
                             # Once per minute, refresh the whole frame to support moved clock labels.
                             send_bitmap(device,frame,0,0)
-                        elif sec_due and conf.get('show_seconds',True):
-                            send_rotated_box(device,frame,seconds_region(conf,now))
+                        else:
+                            if marquee_changed:
+                                send_rotated_box(device,frame,notice_region(conf))
+                            if sec_due and conf.get('show_seconds',True):
+                                send_rotated_box(device,frame,seconds_region(conf,now))
                     except Exception as exc:
                         logger.error('USB transfer failed: %s; retry in 5s',exc)
                         try:device.close()
@@ -1183,7 +1233,8 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                         device=None;next_retry=tick+5
                         changed=True
 
-            if changed or hm_due or sec_due:
+            if changed or hm_due or sec_due or marquee_changed:
+                previous_marquee_px=marquee_px
                 prev_frame=frame
                 prev_data_signature=data_signature
                 last_hm=hm; last_seconds=sec
@@ -1199,6 +1250,8 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                                     weather_condition=weather.condition_text or weather_description(weather.code),
                                     weather_status='OK' if weather.error is None else '待機/エラー',
                                     train_status=train.status,
+                                    rail_status=rail_notice.text,
+                                    rail_status_updated=rail_notice.fetched.isoformat() if rail_notice.fetched else '',
                                     settings_hash=last_settings_hash,
                                     clock_update_mode=conf.get('clock_update_mode','compact'),
                                     **CLOCK.state())
