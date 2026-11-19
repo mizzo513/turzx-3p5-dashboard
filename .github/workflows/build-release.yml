@@ -30,7 +30,7 @@ jobs:
         run: |
           python -m compileall -q .
 
-      - name: Run offline regression and GitHub updater tests
+      - name: Run GUI, weather-unit, group-editor and updater regressions
         shell: pwsh
         run: |
           python -m pip install pillow pyserial
