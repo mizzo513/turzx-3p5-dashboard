@@ -62,7 +62,8 @@ class TestSettingsNotebook(unittest.TestCase):
                   'clock_update_mode','auto_start_display','weather_city','weather_latitude',
                   'weather_longitude','weather_update_minutes','weather_provider',
                   'weatherapi_key','train_source','ir_route','train_update_seconds',
-                  'train_count','google_maps_api_key','auto_update_check'}
+                  'train_count','google_maps_api_key','auto_update_check',
+                  'rail_status_enabled','rail_status_update_minutes'}
         self.assertTrue(required.issubset(self.gui.vars),required-set(self.gui.vars))
         original=copy.deepcopy(self.gui.conf)
         self.gui.vars['weather_city'].set('津幡町')
@@ -73,6 +74,8 @@ class TestSettingsNotebook(unittest.TestCase):
         self.gui.vars['show_seconds'].set(False)
         self.gui.vars['train_count'].set('2')
         self.gui.vars['auto_update_check'].set(False)
+        self.gui.vars['rail_status_enabled'].set(False)
+        self.gui.vars['rail_status_update_minutes'].set('8')
         self.gui.vars['auto_start_display'].set(False)
         updated=self.gui.read_form()
         self.assertEqual(updated['weather_city'],'津幡町')
@@ -81,6 +84,8 @@ class TestSettingsNotebook(unittest.TestCase):
         self.assertEqual(updated['train_count'],2)
         self.assertFalse(updated['show_seconds'])
         self.assertFalse(updated['auto_update_check'])
+        self.assertFalse(updated['rail_status_enabled'])
+        self.assertEqual(updated['rail_status_update_minutes'],8)
         self.assertFalse(updated['auto_start_display'])
         self.assertEqual(updated['text_styles'],original['text_styles'])
         self.assertEqual(updated['panel_styles'],original['panel_styles'])
