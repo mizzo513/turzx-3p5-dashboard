@@ -732,6 +732,21 @@ def clock_minute_key(now,conf):
     return datetime_text(now,conf)[:-2] if conf.get('show_seconds',True) else datetime_text(now,conf)
 
 
+def clock_label_region(conf, now):
+    """Full date/time label crop, covering old and new minute glyphs."""
+    sp=style_props(conf,'clock_datetime')
+    d=ImageDraw.Draw(Image.new('RGB',(2,2)))
+    width=max(1,min(sp['max_width'],W-sp['x']-1))
+    boxes=[]
+    for moment in (now,now-timedelta(minutes=1)):
+        shown,ft=measured_text(d,datetime_text(moment,conf),sp['size'],width,sp['kind'],min_size=8)
+        boxes.append(d.textbbox((sp['x'],sp['y']),shown,font=ft))
+    return (max(0,min(b[0] for b in boxes)-5),
+            max(0,min(b[1] for b in boxes)-5),
+            min(W,max(b[2] for b in boxes)+7),
+            min(H,max(b[3] for b in boxes)+5))
+
+
 def seconds_region(conf, now=None):
     """Exact seconds text crop, computed from the same font and text as renderer."""
     if now is None:now=jp_now()
@@ -931,7 +946,7 @@ def open_display(port_name):
         port_name=found[0].device
     elif not any(item.device.upper()==port_name.upper() for item in found):
         raise RuntimeError('Not a recognized 3.5-inch TURZX serial port: '+port_name)
-    return serial.Serial(port_name,baudrate=115200,timeout=1,write_timeout=25,rtscts=True)
+    return serial.Serial(port_name,baudrate=115200,timeout=1,write_timeout=3,rtscts=True)
 
 
 def log_setup():
@@ -1071,6 +1086,11 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
     previous_clock=None
     next_retry=0.0
     device=None
+    force_full=True
+    usb_error=''
+    last_usb_check=0.0
+    last_transfer_ms=0.0
+    last_transfer_kind=''
     last_status=0.0
     last_settings_poll=0.0
     last_settings_hash=settings_digest()
@@ -1108,10 +1128,22 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                 ntp_future=None
                 ntp_future_server=None
             now=jp_now()
-            if STOP_PATH.exists() or (current_state() and current_state().stop_requested.is_set()):
+            ipc=current_state()
+            if STOP_PATH.exists() or (ipc and ipc.stop_requested.is_set()):
                 logger.info('Stop requested from settings GUI')
                 STOP_PATH.unlink(missing_ok=True)
                 break
+            if ipc and ipc.reconnect_requested.is_set():
+                ipc.reconnect_requested.clear()
+                logger.info('Manual USB reconnect requested')
+                if device is not None:
+                    try:device.close()
+                    except Exception:pass
+                device=None
+                next_retry=0.0
+                force_full=True
+                usb_error='再接続処理中'
+                last_hm=None;last_seconds=None
 
             # Read settings periodically, without terminating the renderer.
             if tick-last_settings_poll>=.25:
@@ -1146,8 +1178,11 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                         if port_name!=conf['port']:
                             port_name=conf['port']
                             if device is not None:
-                                device.close();device=None
-                                next_retry=0.0
+                                try:device.close()
+                                except Exception:pass
+                                device=None
+                            next_retry=0.0
+                            force_full=True
                         prev_data_signature=None
                         last_hm=None;last_seconds=None;previous_clock=None
                     except Exception as exc:
