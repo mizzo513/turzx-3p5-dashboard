@@ -34,6 +34,7 @@ from version_info import APP_VERSION
 from internet_clock import InternetClock, query_ntp, NTP_SERVER
 from weatherapi_provider import fetch_weatherapi, WeatherAPIError
 from rail_official_status import RailNotice, fetch_official_rail_notice
+from marquee_scheduler import MarqueeScheduler
 from contextlib import nullcontext
 
 BUNDLE_ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))
@@ -720,6 +721,18 @@ def draw_rail_notice(image, conf, text, scroll_px=0):
     return (x0,y0,x1,y1),scrollable
 
 
+def render_notice_patch(base_logical, conf, text, scroll_px=0):
+    """Draw only the rail notice (background + text), preserving all styling.
+
+    The cached base image contains all panels without the rail notice ink;
+    only a roughly 315x17-pixel RGB565 rectangle is transmitted over USB.
+    """
+    logical=base_logical.copy()
+    (x0,y0,x1,y1),_=draw_rail_notice(logical,conf,text,scroll_px)
+    patch=logical.crop((x0,y0,x1,y1)).transpose(Image.Transpose.ROTATE_180)
+    return patch,W-x1,H-y1
+
+
 def datetime_text(now, conf):
     days='月火水木金土日'
     date_part=now.strftime('%m/%d')+'('+days[now.weekday()]+') '
@@ -796,7 +809,7 @@ def value_or_dash(val,formatter=lambda a: str(a)):
     return '---' if val is None else formatter(val)
 
 
-def render_original(now, weather, train_state, conf, hit_boxes=None, rail_notice=None, marquee_px=0):
+def render_original(now, weather, train_state, conf, hit_boxes=None, rail_notice=None, marquee_px=0, skip_rail_notice=False):
     """Draw logical 480x320 dashboard; optionally return actual text/panel hitboxes."""
     img=Image.new('RGB',(W,H),BG)
     d=ImageDraw.Draw(img)
@@ -841,7 +854,10 @@ def render_original(now, weather, train_state, conf, hit_boxes=None, rail_notice
     # these into one text run: that silently shrinks digits on 480px hardware.
     panel('train')
     rail_text=(rail_notice.text if rail_notice is not None else '運行情報：未確認')
-    notice_box,_scrolls=draw_rail_notice(img,conf,rail_text,marquee_px)
+    if skip_rail_notice:
+        notice_box=notice_region(conf)
+    else:
+        notice_box,_scrolls=draw_rail_notice(img,conf,rail_text,marquee_px)
     if hit_boxes is not None:hit_boxes['text:train_notice']=notice_box
     d.line((142,77,465,77),fill=BORDER)
     for i in range(3):
@@ -1078,7 +1094,10 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
     notice_due=0.0
     marquee_px=0
     previous_marquee_px=0
-    next_marquee=0.0
+    marquee=MarqueeScheduler()
+    base_logical=None
+    scroll_transfer_ms=0.0
+    clock_display_lag_ms=0.0
     prev_frame=None
     prev_data_signature=None
     last_hm=None
@@ -1164,6 +1183,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                             notice_future=None
                             notice_due=0.0
                             marquee_px=0
+                            marquee.disable()
                             if not conf.get('rail_status_enabled',True):
                                 rail_notice=RailNotice('運行情報：表示OFF')
                         if any(prev_conf.get(k)!=conf.get(k) for k in ('ntp_server','ntp_sync_minutes')):
@@ -1184,6 +1204,9 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                             next_retry=0.0
                             force_full=True
                         prev_data_signature=None
+                        base_logical=None
+                        marquee_px=0;previous_marquee_px=0
+                        marquee.disable()
                         last_hm=None;last_seconds=None;previous_clock=None
                     except Exception as exc:
                         logger.error('Live settings are invalid; retaining previous settings: %s',exc)
@@ -1231,7 +1254,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                         current_notice=notice_future.result()
                         if current_notice.text != rail_notice.text:
                             marquee_px=0
-                            next_marquee=tick+2.0
+                            marquee.reset(tick)
                         rail_notice=current_notice
                         logger.info('Rail sources: IR=%s, Nanao=%s',
                                     rail_notice.ir.state,rail_notice.nanao.state)
