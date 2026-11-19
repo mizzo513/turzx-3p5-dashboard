@@ -991,18 +991,34 @@ def render_original(now, weather, train_state, conf, hit_boxes=None, rail_notice
                 label(f'train_arrive_{n}',t.arrive.strftime('%H:%M'),12)
                 wait=int((t.transfer_depart-t.transfer_arrive).total_seconds()//60)
                 platforms=(t.transfer_arrival_platform or '?')+'→'+(t.transfer_departure_platform or '?')
-                caption=('直通（乗換不要）  ' if t.direct else f'乗換{wait}分  ')+platforms+'番線'
+                caption=('直通（乗換不要）' if t.direct else f'乗換{wait}分')
                 if t.arrive.date()>t.depart.date():caption+=' 翌日着'
                 if t.depart.date()>now.date():caption='翌日発 '+caption
                 label(f'train_detail_{n}',caption)
+                # Independent fixed-X column: minutes can have different
+                # digit counts without shifting the platform position.
+                label(f'train_transfer_platform_{n}',platforms+'番線')
+            elif (train_state.source=='ir_schedule'
+                  and t.origin=='加賀笠間' and t.destination=='金沢'):
+                # Two actual station times, no invented onward connection.
+                label(f'train_station_depart_{n}','加賀笠間発')
+                label(f'train_station_kan_arr_{n}','金沢着')
+                label(f'train_time_{n}',t.depart.strftime('%H:%M'),12)
+                label(f'train_kan_arr_{n}',t.arrive.strftime('%H:%M'),12)
+                caption=(t.line or '列車')+'  '+str(
+                    int(round((t.arrive-t.depart).total_seconds()/60)))+'分'
+                if t.depart.date()>now.date():caption='翌日 '+caption
+                label(f'train_detail_{n}',caption)
+                if t.platform:
+                    label(f'train_transfer_platform_{n}',t.platform+'番線着')
             else:
                 label(f'train_legacy_time_{n}',t.depart.strftime('%H:%M')+' → '+t.arrive.strftime('%H:%M'))
                 duration=int(round((t.arrive-t.depart).total_seconds()/60))
                 caption=(t.line or '列車')+'  '+f'{duration}分'
-                if t.platform:caption+='  '+t.platform+'番線'
                 if t.depart.date()>now.date():caption='翌日 '+caption
                 elif t.arrive.date()>t.depart.date():caption+='  翌日着'
                 label(f'train_detail_{n}',caption)
+                if t.platform:label(f'train_transfer_platform_{n}',t.platform+'番線')
         elif i==0:
             label('train_empty',train_state.status)
         else:
