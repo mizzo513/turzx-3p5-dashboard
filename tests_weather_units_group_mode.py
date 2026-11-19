@@ -46,9 +46,9 @@ class TextGroupAndWeatherUnits(unittest.TestCase):
             image=app.render_original(now,weather,app.TrainState(),conf,hit_boxes=hit)
         self.assertEqual(image.size,(480,320))
         expected={
-            'weather_temperature':('13','°'),
-            'weather_high':('18','°C'),
-            'weather_low':('7','°C'),
+            'weather_temperature':('13','℃'),
+            'weather_high':('18','℃'),
+            'weather_low':('7','℃'),
             'weather_rain':('100','%'),
             'weather_humidity':('91','%'),
             'weather_wind':('3.5','m/s'),
