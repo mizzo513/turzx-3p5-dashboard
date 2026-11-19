@@ -57,6 +57,18 @@ class TestSettingsNotebook(unittest.TestCase):
             self.assertEqual(str(canvas.cget('yscrollcommand'))!='',True)
             self.assertIsNotNone(canvas.find_all())
 
+    def test_marquee_pixels_per_second_edit_and_validation(self):
+        self.assertIn('rail_scroll_speed_px_s',self.gui.vars)
+        self.gui.vars['rail_scroll_speed_px_s'].set('23.5')
+        self.assertAlmostEqual(self.gui.read_form()['rail_scroll_speed_px_s'],23.5)
+        self.gui.vars['rail_scroll_speed_px_s'].set('0')
+        self.assertEqual(self.gui.read_form()['rail_scroll_speed_px_s'],0)
+        for value in ('-0.1','61','nan','inf','abc'):
+            with self.subTest(value=value):
+                self.gui.vars['rail_scroll_speed_px_s'].set(value)
+                with self.assertRaises(ValueError):
+                    self.gui.read_form()
+
     def test_all_settings_still_participate_in_single_save(self):
         required={'port','show_seconds','clock_12h','ntp_server','ntp_sync_minutes',
                   'clock_update_mode','auto_start_display','weather_city','weather_latitude',
