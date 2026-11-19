@@ -1135,7 +1135,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
     ntp_future=None
     ntp_future_server=None
     ntp_due=0.0
-    pool=ThreadPoolExecutor(max_workers=4)
+    pool=ThreadPoolExecutor(max_workers=5)  # weather observation fetch runs independently
     try:
         try:STOP_PATH.unlink(missing_ok=True)
         except Exception:pass
