@@ -53,7 +53,7 @@ class V39LayoutTests(unittest.TestCase):
                 self.assertLess(left[2],right[0],(n,left,right))
             self.assertIn(f'text:train_detail_{n}',boxes)
 
-    def test_status_is_in_header_and_source_note_in_train(self):
+    def test_status_is_in_header_and_no_timetable_footer(self):
         boxes={}
         app.render_original(self.now,self.weather,self.train,self.conf,hit_boxes=boxes)
         header=boxes['panel:header']
@@ -61,9 +61,7 @@ class V39LayoutTests(unittest.TestCase):
             l,t,r,b=boxes['text:'+key]
             self.assertTrue(header[0]<=l<r<=header[2],(key,l,r))
             self.assertTrue(header[1]<=t<b<=header[3],(key,t,b))
-        x0,y0,x1,y1=boxes['panel:train']
-        l,t,r,b=boxes['text:train_source_note']
-        self.assertTrue(x0<=l<r<=x1 and y0<=t<b<=y1)
+        self.assertNotIn('text:train_source_note',boxes)
 
     def test_city_and_current_temperature_have_no_prefix_or_decimal(self):
         seen={}
