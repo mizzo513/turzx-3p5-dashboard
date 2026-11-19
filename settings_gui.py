@@ -234,8 +234,10 @@ class SettingsWindow:
         cell=max(140,max(self._tab_font.measure(label) for label in labels)+34)
         self._tab_width_px=cell
         for page,label in zip(pages,labels):
-            horizontal=max(9,(cell-self._tab_font.measure(label))//2)
-            self.tabs.tab(page,padding=(horizontal,8,horizontal,8))
+            remaining=cell-self._tab_font.measure(label)
+            left=remaining//2
+            right=remaining-left
+            self.tabs.tab(page,padding=(left,8,right,8))
 
     def _create_settings_tab(self,title):
         """Create an independent scrollable page for compact or high-DPI screens."""
