@@ -16,6 +16,7 @@ PORT = 48653
 class IPCState:
     status: dict = field(default_factory=dict)
     stop_requested: threading.Event = field(default_factory=threading.Event)
+    reconnect_requested: threading.Event = field(default_factory=threading.Event)
     lock: threading.Lock = field(default_factory=threading.Lock)
 
     def update(self, **values):
@@ -37,6 +38,9 @@ class _Handler(socketserver.StreamRequestHandler):
                 response = self.server.state.read()
             elif command == 'STOP':
                 self.server.state.stop_requested.set()
+                response = {'ok': True}
+            elif command == 'RECONNECT':
+                self.server.state.reconnect_requested.set()
                 response = {'ok': True}
             else:
                 response = {'error': 'unknown command'}
@@ -94,5 +98,13 @@ def get_runtime_status():
 def request_stop():
     try:
         return bool(send_command('STOP').get('ok'))
+    except (OSError, ValueError, TypeError):
+        return False
+
+
+def request_reconnect():
+    """Ask the running USB engine to close and re-open its port safely."""
+    try:
+        return bool(send_command('RECONNECT').get('ok'))
     except (OSError, ValueError, TypeError):
         return False
