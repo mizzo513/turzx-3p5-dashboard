@@ -11,7 +11,7 @@ class VersionRegression(unittest.TestCase):
         self.conf=copy.deepcopy(d.DEFAULTS)
         self.now=datetime(2026,11,18,13,15,tzinfo=d.TZ)
     def test_version_one_source(self):
-        self.assertEqual(APP_VERSION,'3.9.5')
+        self.assertEqual(APP_VERSION,'3.9.6')
         import settings_gui, layout_editor
         self.assertIn('APP_VERSION',Path(settings_gui.__file__).read_text(encoding='utf-8'))
         self.assertIn('APP_VERSION',Path(layout_editor.__file__).read_text(encoding='utf-8'))
