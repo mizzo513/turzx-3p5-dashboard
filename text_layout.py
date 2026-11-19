@@ -23,8 +23,8 @@ ELEMENTS = {
     'weather_humidity': ('湿度 数値', 74, 231, 11, '#F3F9FD', 'num', 30),
     'weather_humidity_unit': ('湿度 単位', 106, 233, 10, '#F3F9FD', 'num', 18),
     'weather_wind_label': ('風 ラベル', 13, 255, 11, '#9CB9CA', 'ja', 49),
-    'weather_wind': ('風速 数値', 71, 255, 10, '#F3F9FD', 'num', 32),
-    'weather_wind_unit': ('風速 単位', 105, 256, 9, '#F3F9FD', 'num', 21),
+    'weather_wind': ('風速 数値', 71, 255, 10, '#F3F9FD', 'num', 33),
+    'weather_wind_unit': ('風速 単位', 106, 256, 9, '#F3F9FD', 'num', 20),
     'train_index_1': ('列車1 番号', 145, 81, 19, '#21DFF0', 'num', 25),
     'train_station_depart_1': ('列車1 加賀笠間 発', 176, 66, 10, '#9CB9CA', 'ja', 62),
     'train_station_kan_arr_1': ('列車1 金沢 着', 246, 66, 10, '#9CB9CA', 'ja', 63),
@@ -65,6 +65,13 @@ ELEMENTS = {
     'train_source_note': ('乗換枠内 時刻表注記', 146, 290, 9, '#9CB9CA', 'ja', 195),
     'footer_train': ('乗換枠内 更新時刻', 376, 290, 10, '#21DFF0', 'ja', 91),
 }
+
+# All five numeric weather rows share the same right-hand column boundary.
+# Other labels, including measurement units, continue to use left alignment.
+WEATHER_RIGHT_ALIGNED_VALUES = frozenset((
+    'weather_high', 'weather_low', 'weather_rain',
+    'weather_humidity', 'weather_wind',
+))
 
 def props(conf, key):
     label, x, y, size, color, kind, width = ELEMENTS[key]
