@@ -32,7 +32,7 @@ class GroupLayoutTests(unittest.TestCase):
         self.assertEqual(len(GROUPS[group][1]),12)
         new=adjust_group({}, {}, group, dsize=2)
         self.assertEqual(len(new),12)
-        self.assertEqual(new['train_time_3']['size'],19)
+        self.assertEqual(new['train_time_3']['size'],text_props({},'train_time_3')['size']+2)
 
     def test_weather_labels_and_values_are_distinct(self):
         titles='天気｜項目名（5種）'
