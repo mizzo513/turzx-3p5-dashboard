@@ -81,6 +81,34 @@ class TestSettingsNotebook(unittest.TestCase):
             self.assertEqual(str(canvas.cget('yscrollcommand'))!='',True)
             self.assertIsNotNone(canvas.find_all())
 
+    def test_tabs_have_contrasting_colors_and_equal_pixel_width(self):
+        from tkinter import ttk
+        self.assertEqual(self.gui.tabs.cget('style'),'TURZX.TNotebook')
+        style=ttk.Style(self.root)
+        # Clam makes custom tab backgrounds effective on Windows native themes.
+        self.assertEqual(style.theme_use(),'clam')
+        tab_style='TURZX.TNotebook.Tab'
+        selected=dict(style.map(tab_style,'background')).get('selected')
+        # State map consists of (state_spec, color) pairs, not tab text.
+        color_map=dict((tuple(spec) if not isinstance(spec,str) else spec, color)
+                       for spec,color in style.map(tab_style,'background'))
+        self.assertNotEqual(
+            style.lookup(tab_style,'background',('selected',)),
+            style.lookup(tab_style,'background',('!selected',)))
+        self.assertEqual(style.lookup(tab_style,'foreground',('selected',)),
+                         '#FFFFFF')
+        self.assertGreaterEqual(self.gui._tab_width_px,140)
+        widths=[]
+        for page in self.gui.tabs.tabs():
+            label=self.gui.tabs.tab(page,'text')
+            padding=self.gui.tabs.tab(page,'padding')
+            # Tk may return pixel values as strings.
+            left,top,right,bottom=(int(x) for x in padding)
+            self.assertEqual((top,bottom),(8,8))
+            widths.append(self.gui._tab_font.measure(label)+left+right)
+        self.assertEqual(len(set(widths)),1)
+        self.assertEqual(widths[0],self.gui._tab_width_px)
+
     def test_marquee_pixels_per_second_edit_and_validation(self):
         self.assertIn('rail_scroll_speed_px_s',self.gui.vars)
         self.gui.vars['rail_scroll_speed_px_s'].set('23.5')
