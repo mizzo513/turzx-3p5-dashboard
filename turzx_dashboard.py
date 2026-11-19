@@ -29,10 +29,11 @@ from urllib.request import Request, urlopen
 from PIL import Image, ImageDraw, ImageFont
 from runtime_ipc import StatusServer, current_state
 from text_layout import props as style_props, validate_styles, ELEMENTS, WEATHER_RIGHT_ALIGNED_VALUES
-from panel_layout import draw_panel, validate_panels
+from panel_layout import draw_panel, validate_panels, settings as panel_settings
 from version_info import APP_VERSION
 from internet_clock import InternetClock, query_ntp, NTP_SERVER
 from weatherapi_provider import fetch_weatherapi, WeatherAPIError
+from rail_official_status import RailNotice, fetch_official_rail_notice
 from contextlib import nullcontext
 
 BUNDLE_ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))
@@ -79,6 +80,8 @@ DEFAULTS = {
     'train_source': 'ir_schedule',  # bundled IR timetable, csv, json, or google_transit
     'ir_route': 'via_kanazawa',  # via_kanazawa or kanazawa_tsubata; old configs migrate automatically
     'train_update_seconds': 30,
+    'rail_status_enabled': True,
+    'rail_status_update_minutes': 5, # request public IR/JR sources at most every 5 min
     'train_count': 3,
     'train_from': '金沢',
     'train_to': '津幡',
@@ -634,6 +637,51 @@ def style_label(draw, conf, key, text, min_size=8, max_width=None):
                     spec['color'],spec['kind'],min_size=min_size)
 
 
+def notice_region(conf):
+    """Logical (unrotated) banner crop; bounded to the train panel."""
+    spec=style_props(conf,'train_notice')
+    panel=panel_settings(conf,'train')
+    x0=max(panel['x']+7,spec['x'])
+    y0=max(panel['y']+5,spec['y'])
+    x1=min(W-4,panel['x']+panel['w']-7,spec['x']+spec['max_width'])
+    y1=min(H-1,panel['y']+panel['h']-4,y0+17)
+    return (x0,y0,max(x0+1,x1),max(y0+1,y1))
+
+
+def notice_overflows(conf, text):
+    x0,y0,x1,y1=notice_region(conf)
+    spec=style_props(conf,'train_notice')
+    measure=ImageDraw.Draw(Image.new('RGB',(2,2)))
+    return measure.textlength(str(text),font=font(spec['size'],spec['kind']))>(x1-x0)
+
+
+def draw_rail_notice(image, conf, text, scroll_px=0):
+    """Draw a one-line marquee inside a clipped transparent overlay.
+
+    This never spills into train times or panel edges. Static strings do not
+    move; only text wider than the available band is horizontally scrolled.
+    """
+    x0,y0,x1,y1=notice_region(conf)
+    w,h=x1-x0,y1-y0
+    spec=style_props(conf,'train_notice')
+    message=str(text or '運行情報：未確認')
+    ft=font(spec['size'],spec['kind'])
+    overlay=Image.new('RGBA',(w,h),(0,0,0,0))
+    d=ImageDraw.Draw(overlay)
+    ink=d.textbbox((0,0),message,font=ft)
+    text_width=max(0,int(d.textlength(message,font=ft)+.5))
+    scrollable=text_width>w
+    gap=34
+    offset=int(scroll_px)%(text_width+gap) if scrollable else 0
+    baseline=1-ink[1]  # place glyph ink at top, avoiding font ascent artifacts
+    color=spec['color']
+    d.text((-offset,baseline),message,font=ft,fill=color)
+    if scrollable:
+        d.text((text_width+gap-offset,baseline),message,font=ft,fill=color)
+    image.paste(overlay,(x0,y0),overlay)
+    return (x0,y0,x1,y1),scrollable
+
+
 def datetime_text(now, conf):
     days='月火水木金土日'
     date_part=now.strftime('%m/%d')+'('+days[now.weekday()]+') '
@@ -695,7 +743,7 @@ def value_or_dash(val,formatter=lambda a: str(a)):
     return '---' if val is None else formatter(val)
 
 
-def render_original(now, weather, train_state, conf, hit_boxes=None):
+def render_original(now, weather, train_state, conf, hit_boxes=None, rail_notice=None, marquee_px=0):
     """Draw logical 480x320 dashboard; optionally return actual text/panel hitboxes."""
     img=Image.new('RGB',(W,H),BG)
     d=ImageDraw.Draw(img)
@@ -717,14 +765,14 @@ def render_original(now, weather, train_state, conf, hit_boxes=None):
     draw_weather_icon(d,weather.code,8,93)
     label('weather_description',weather.condition_text or ('キー未設定' if weather.code is None and weather.error and 'APIキー' in weather.error else weather_description(weather.code)))
     label('weather_temperature',value_or_dash(weather.temperature,lambda a:f'{a:.0f}'),12)
-    label('weather_temperature_unit','°' if weather.temperature is not None else '')
+    label('weather_temperature_unit','℃' if weather.temperature is not None else '')
     d.line((13,150,119,150),fill=BORDER)
     label('weather_high_label','最高')
     label('weather_high',value_or_dash(weather.high,lambda a:f'{a:.0f}'))
-    label('weather_high_unit','°C' if weather.high is not None else '')
+    label('weather_high_unit','℃' if weather.high is not None else '')
     label('weather_low_label','最低')
     label('weather_low',value_or_dash(weather.low,lambda a:f'{a:.0f}'))
-    label('weather_low_unit','°C' if weather.low is not None else '')
+    label('weather_low_unit','℃' if weather.low is not None else '')
     label('weather_rain_label','降水')
     label('weather_rain',value_or_dash(weather.precip,lambda a:f'{a}'))
     label('weather_rain_unit','%' if weather.precip is not None else '')
@@ -739,6 +787,10 @@ def render_original(now, weather, train_state, conf, hit_boxes=None):
     # arrival, Kanazawa departure, and destination arrival. Do NOT combine
     # these into one text run: that silently shrinks digits on 480px hardware.
     panel('train')
+    rail_text=(rail_notice.text if rail_notice is not None else '運行情報：未確認')
+    notice_box,_scrolls=draw_rail_notice(img,conf,rail_text,marquee_px)
+    if hit_boxes is not None:hit_boxes['text:train_notice']=notice_box
+    d.line((142,77,465,77),fill=BORDER)
     for i in range(3):
         n=i+1
         panel(f'train_{n}')
@@ -784,8 +836,9 @@ def render_original(now, weather, train_state, conf, hit_boxes=None):
     return img
 
 
-def render_physical(now, weather, train_state, conf):
-    return render_original(now,weather,train_state,conf).transpose(Image.Transpose.ROTATE_180)
+def render_physical(now, weather, train_state, conf, rail_notice=None, marquee_px=0):
+    return render_original(now,weather,train_state,conf,
+                           rail_notice=rail_notice,marquee_px=marquee_px).transpose(Image.Transpose.ROTATE_180)
 
 
 def orientation_packet():
