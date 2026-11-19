@@ -100,7 +100,7 @@ DEFAULTS = {
     'ntp_sync_minutes': 30,
     'auto_update_check': True,
     'brightness_note': '',
-    'layout_revision': 396, # rail-status strip + compact rows (v3.9.6)
+    'layout_revision': 397, # top-right refresh time + expanded rows (v3.9.10)
     'text_styles': {},  # optional per-label x/y/size/color overrides
     'panel_styles': {},  # optional per-panel x/y/w/h/radius/fill/outline
 }
