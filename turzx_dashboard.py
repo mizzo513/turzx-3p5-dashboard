@@ -190,7 +190,52 @@ def load_settings():
                     if 'y' in style:style['y']=min(319,int(style['y'])+(19 if n==1 else 12 if n==2 else 5))
                     if 'h' in style and int(style['h'])==69:style['h']=64
             conf['panel_styles']=panel_styles
-        conf['layout_revision']=396
+        # V3.9.10: refresh timestamps move to the clock header. The weather
+        # rows and three train cards use the freed bottom area. Translate
+        # existing custom anchors by each field's default-position delta,
+        # retaining the user's relative offsets, sizes and colors.
+        if int(saved.get('layout_revision',0) or 0)<397:
+            if ((conf.get('text_styles') or conf.get('panel_styles')) and
+                    'layout_backup_v399' not in saved):
+                conf['layout_backup_v399']={
+                    'text_styles':copy.deepcopy(conf.get('text_styles') or {}),
+                    'panel_styles':copy.deepcopy(conf.get('panel_styles') or {}),
+                }
+            x_moves={'version':-6,'footer_weather':342,'footer_train':-21}
+            y_moves={
+                'version':2,'footer_weather':-283,'footer_train':-271,
+                'train_source_note':10,
+                'weather_temperature_unit':-1,
+                'weather_high_label':6,'weather_high':6,'weather_high_unit':6,
+                'weather_low_label':11,'weather_low':11,'weather_low_unit':11,
+                'weather_rain_label':12,'weather_rain':12,'weather_rain_unit':12,
+                'weather_humidity_label':18,'weather_humidity':18,
+                'weather_humidity_unit':18,
+                'weather_wind_label':25,'weather_wind':25,'weather_wind_unit':26,
+                'train_placeholder_2':12,'train_placeholder_3':20,
+                'train_empty':5,
+            }
+            for number,offset in ((1,2),(2,10),(3,18)):
+                for name in ('station_depart','station_kan_arr',
+                             'station_kan_dep','station_arrive'):
+                    y_moves[f'train_{name}_{number}']=offset
+                for name in ('time','kan_arr','kan_dep','arrive','legacy_time'):
+                    y_moves[f'train_{name}_{number}']=offset+2
+                y_moves[f'train_index_{number}']=offset+1
+                y_moves[f'train_detail_{number}']=offset+4
+            text_styles=copy.deepcopy(conf.get('text_styles') or {})
+            if isinstance(text_styles,dict):
+                for key,item in text_styles.items():
+                    if not isinstance(item,dict):
+                        continue
+                    for coordinate,deltas,high in (('x',x_moves,479),('y',y_moves,319)):
+                        if coordinate in item and key in deltas:
+                            try:
+                                item[coordinate]=max(0,min(high,int(item[coordinate])+deltas[key]))
+                            except (ValueError,TypeError):
+                                pass
+                conf['text_styles']=text_styles
+        conf['layout_revision']=397
     return conf
 
 
