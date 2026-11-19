@@ -30,8 +30,8 @@ class SettingsWindow:
         root.title('TURZX 3.5 設定 V'+APP_VERSION+'（即時反映）')
         # Compact notebook: each tab scrolls independently at high DPI.
         # The action/status bar stays on screen regardless of the selected tab.
-        root.geometry('800x540')
-        root.minsize(700,425)
+        root.geometry('725x505')
+        root.minsize(635,425)
         root.columnconfigure(0,weight=1)
         root.rowconfigure(1,weight=1)
         titlebar=ttk.Frame(root,padding=(12,8,12,4))
@@ -68,10 +68,10 @@ class SettingsWindow:
         ttk.Label(main,text='時刻取得：NICT NTP（インターネット優先）',foreground='#21709c').grid(row=r,column=0,columnspan=3,sticky='w',pady=(6,2));r+=1
         self.field(main,'NTPサーバー','ntp_server',r,'ntp.nict.jp');r+=1
         self.field(main,'時刻再同期間隔（分）','ntp_sync_minutes',r,'30');r+=1
-        ttk.Label(main,text='UDP 123が遮断されている場合はPC時刻へ切替。同期成功後は最長6時間保持。PCの時計は変更しません。',foreground='#5c7184',wraplength=710).grid(row=r,column=0,columnspan=3,sticky='w');r+=1
+        ttk.Label(main,text='UDP 123が遮断されている場合はPC時刻へ切替。同期成功後は最長6時間保持。PCの時計は変更しません。',foreground='#5c7184',wraplength=610).grid(row=r,column=0,columnspan=3,sticky='w');r+=1
         self.vars['clock_update_mode']=tk.StringVar(value=self.conf.get('clock_update_mode','compact'))
         ttk.Label(main,text='秒表示の転送方式').grid(row=r,column=0,sticky='w',pady=5)
-        ttk.Combobox(main,textvariable=self.vars['clock_update_mode'],values=['compact','safe_strip'],state='readonly',width=25).grid(row=r,column=1,sticky='ew',padx=(10,0));r+=1
+        ttk.Combobox(main,textvariable=self.vars['clock_update_mode'],values=['compact','safe_strip'],state='readonly',width=25).grid(row=r,column=1,sticky='w',padx=(10,0));r+=1
         ttk.Label(main,text='compact：秒の数字だけ更新 / safe_strip：従来の横幅全体更新（文字崩れ時）',foreground='#5c7184').grid(row=r,column=0,columnspan=3,sticky='w');r+=1
         main=manage_tab
         r=0
@@ -98,8 +98,8 @@ class SettingsWindow:
             value='WeatherAPI.com' if self.conf.get('weather_provider','weatherapi')=='weatherapi' else 'Open-Meteo')
         self.weather_provider_combo=ttk.Combobox(
             main,textvariable=self.vars['weather_provider'],
-            values=['WeatherAPI.com','Open-Meteo'],state='readonly',width=27)
-        self.weather_provider_combo.grid(row=r,column=1,sticky='ew',padx=(10,0));r+=1
+            values=['WeatherAPI.com','Open-Meteo'],state='readonly',width=22)
+        self.weather_provider_combo.grid(row=r,column=1,sticky='w',padx=(10,0));r+=1
         self.field(main,'WeatherAPI.com APIキー','weatherapi_key',r,show='*');r+=1
         ttk.Label(main,text='WeatherAPI.com使用時はAPIキーが必要です。キーはPCの設定に保存し、GitHubには送信しません。',
                   foreground='#5c7184',wraplength=710).grid(row=r,column=0,columnspan=3,sticky='w');r+=1
@@ -108,12 +108,11 @@ class SettingsWindow:
                    ).grid(row=r,column=0,columnspan=3,sticky='w',pady=(3,6));r+=1
         self.vars['weather_city']=tk.StringVar(value=self.conf.get('weather_city','白山市'))
         ttk.Label(main,text='天気の地域').grid(row=r,column=0,sticky='w',pady=5)
-        self.city_combo=ttk.Combobox(main,textvariable=self.vars['weather_city'],values=list(CITIES)+['任意の地点'],state='readonly',width=27)
-        self.city_combo.grid(row=r,column=1,sticky='ew',padx=(10,0))
+        self.city_combo=ttk.Combobox(main,textvariable=self.vars['weather_city'],values=list(CITIES)+['任意の地点'],state='readonly',width=22)
+        self.city_combo.grid(row=r,column=1,sticky='w',padx=(10,0))
         self.city_combo.bind('<<ComboboxSelected>>',self.city_changed)
         r+=1
-        self.field(main,'緯度','weather_latitude',r);r+=1
-        self.field(main,'経度','weather_longitude',r);r+=1
+        self.paired_fields(main,r,('緯度','weather_latitude'),('経度','weather_longitude'));r+=1
         self.field(main,'天気更新間隔（分）','weather_update_minutes',r);r+=1
         main=train_tab
         r=0
@@ -122,15 +121,14 @@ class SettingsWindow:
         ttk.Label(main,text='時刻情報の取得元').grid(row=r,column=0,sticky='w',pady=5)
         self.vars['train_source']=tk.StringVar(value=self.conf.get('train_source','ir_schedule'))
         combo=ttk.Combobox(main,textvariable=self.vars['train_source'],values=['ir_schedule','csv','json','google_transit'],state='readonly')
-        combo.grid(row=r,column=1,sticky='ew',padx=(10,0));r+=1
+        combo.grid(row=r,column=1,sticky='w',padx=(10,0));r+=1
         ttk.Label(main,text='ir_schedule：同梱2026/3/14改正ダイヤ / csv・json：外部連携 / google_transit：APIキー',foreground='#5c7184',wraplength=710).grid(row=r,column=0,columnspan=3,sticky='w',pady=(0,5));r+=1
         ttk.Label(main,text='IR時刻表の表示区間').grid(row=r,column=0,sticky='w',pady=5)
         route_choices=('加賀笠間→金沢→津幡','金沢→津幡')
         self.vars['ir_route']=tk.StringVar(value=route_choices[0] if self.conf.get('ir_route','via_kanazawa')=='via_kanazawa' else route_choices[1])
-        ttk.Combobox(main,textvariable=self.vars['ir_route'],values=route_choices,state='readonly',width=28).grid(row=r,column=1,sticky='ew',padx=(10,0));r+=1
+        ttk.Combobox(main,textvariable=self.vars['ir_route'],values=route_choices,state='readonly',width=28).grid(row=r,column=1,sticky='w',padx=(10,0));r+=1
         ttk.Label(main,text='IR時刻表に収録された列車同士を金沢で接続。遅延・運休は反映しません。',foreground='#5c7184').grid(row=r,column=0,columnspan=3,sticky='w');r+=1
-        self.field(main,'列車更新間隔（秒）','train_update_seconds',r);r+=1
-        self.field(main,'表示列車数（最大3）','train_count',r);r+=1
+        self.paired_fields(main,r,('列車更新間隔（秒）','train_update_seconds'),('表示列車数','train_count'));r+=1
         self.field(main,'Google Routes APIキー（任意）','google_maps_api_key',r,show='*');r+=1
         btnrow=ttk.Frame(main);btnrow.grid(row=r,column=0,columnspan=3,sticky='w',pady=(5,7));r+=1
         ttk.Button(btnrow,text='列車候補・データを診断',command=self.diagnose_trains).grid(row=0,column=0,sticky='w',padx=(0,8),pady=(0,4))
@@ -145,7 +143,7 @@ class SettingsWindow:
         ttk.Separator(footer).grid(row=0,column=0,sticky='ew',pady=(0,6))
         self.status=tk.StringVar(value='設定を変更したら「設定を即時反映」で保存してください。')
         ttk.Label(footer,textvariable=self.status,foreground='#21709c',
-                  wraplength=744,justify='left').grid(row=1,column=0,sticky='ew',pady=(0,6))
+                  wraplength=610,justify='left').grid(row=1,column=0,sticky='ew',pady=(0,6))
         row=ttk.Frame(footer)
         row.grid(row=2,column=0,sticky='ew')
         ttk.Button(row,text='設定を即時反映',command=self.save).pack(side='left',padx=(0,7))
@@ -201,7 +199,21 @@ class SettingsWindow:
     def field(self, main, label, name, row, fallback=None, show=None):
         self.vars[name]=tk.StringVar(value=str(self.conf.get(name, fallback or '')))
         ttk.Label(main,text=label).grid(row=row,column=0,sticky='w',pady=4)
-        ttk.Entry(main,textvariable=self.vars[name],show=show).grid(row=row,column=1,sticky='ew',padx=(10,0))
+        width=37 if name in ('weatherapi_key','google_maps_api_key') else (
+            31 if name=='ntp_server' else (18 if name in ('port','weather_city') else 16))
+        ttk.Entry(main,textvariable=self.vars[name],show=show,width=width).grid(
+            row=row,column=1,sticky='w',padx=(10,0))
+
+    def paired_fields(self, main, row, left, right):
+        """Two short numeric settings on one line, preserving their config keys."""
+        holder=ttk.Frame(main)
+        holder.grid(row=row,column=0,columnspan=3,sticky='w',pady=4)
+        for pos,(caption,key) in enumerate((left,right)):
+            self.vars[key]=tk.StringVar(value=str(self.conf.get(key,'')))
+            ttk.Label(holder,text=caption).grid(row=0,column=pos*2,sticky='w',
+                                                padx=(0,6) if pos==0 else (24,6))
+            ttk.Entry(holder,textvariable=self.vars[key],width=15).grid(
+                row=0,column=pos*2+1,sticky='w')
 
     def city_changed(self,_event=None):
         v=self.vars['weather_city'].get()
@@ -436,12 +448,14 @@ class SettingsWindow:
                 if state.get('app_version') != APP_VERSION and attempt < 20:
                     self.root.after(500,lambda:self._autostart_engine(attempt+1))
                 return
-            self.start()
+            self.start(save_before_launch=False)
         except tk.TclError:
             return
 
-    def start(self):
-        if not self.save():return
+    def start(self, *, save_before_launch=True):
+        # Autostart uses the last persisted configuration; do not overwrite
+        # user edits in progress or reset the settings file on every launch.
+        if save_before_launch and not self.save():return
         if self.runtime_state():
             self.status.set('表示アプリは動作中です。設定はそのまま反映されます。');return
         try:
