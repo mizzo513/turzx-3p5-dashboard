@@ -63,7 +63,6 @@ ELEMENTS = {
     'train_placeholder_3': ('列車3 空欄表示', 166, 271, 14, '#5A768A', 'num', 170),
     'train_empty': ('列車なしの案内', 150, 95, 14, '#FAC563', 'ja', 310),
     'footer_weather': ('右上 天気更新時刻', 355, 7, 10, '#21DFF0', 'ja', 112),
-    'train_source_note': ('乗換枠内 時刻表注記', 146, 300, 8, '#9CB9CA', 'ja', 195),
     'footer_train': ('右上 乗換更新時刻', 355, 19, 10, '#85E5A2', 'ja', 112),
 }
 
