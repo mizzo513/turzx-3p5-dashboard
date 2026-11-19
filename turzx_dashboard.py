@@ -28,7 +28,7 @@ from urllib.request import Request, urlopen
 
 from PIL import Image, ImageDraw, ImageFont
 from runtime_ipc import StatusServer, current_state
-from text_layout import props as style_props, validate_styles
+from text_layout import props as style_props, validate_styles, ELEMENTS, WEATHER_RIGHT_ALIGNED_VALUES
 from panel_layout import draw_panel, validate_panels
 from version_info import APP_VERSION
 from internet_clock import InternetClock, query_ntp, NTP_SERVER
@@ -617,6 +617,19 @@ def style_label(draw, conf, key, text, min_size=8, max_width=None):
     spec=style_props(conf,key)
     width=spec['max_width'] if max_width is None else max(spec['max_width'],max_width)
     width=max(1,min(width,W-spec['x']-1))
+    if key in WEATHER_RIGHT_ALIGNED_VALUES:
+        # Numeric entries share an exact right edge (104px in the default
+        # layout). The configured x shifts the entire right-aligned cell,
+        # while font size changes never move its right edge.
+        # Units are separate, left-anchored labels starting at x=106.
+        right_edge=min(W-1,spec['x']+ELEMENTS[key][6])
+        available=max(1,min(width,right_edge-spec['x']))
+        shown,used_font=measured_text(draw,text,spec['size'],available,
+                                      spec['kind'],min_size=min_size)
+        ink=draw.textbbox((0,0),shown,font=used_font)
+        origin=(right_edge-ink[2],spec['y'])
+        draw.text(origin,shown,fill=spec['color'],font=used_font)
+        return draw.textbbox(origin,shown,font=used_font)
     return fit_text(draw,(spec['x'],spec['y']),text,spec['size'],width,
                     spec['color'],spec['kind'],min_size=min_size)
 
