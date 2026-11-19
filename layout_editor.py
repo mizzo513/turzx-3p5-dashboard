@@ -8,6 +8,7 @@ from tkinter import colorchooser, messagebox, ttk
 from PIL import ImageTk
 from panel_layout import PANELS, settings as panel_props, validate_panels
 from layout_wheel import wheel_value, NUMERIC_FIELDS
+from layout_groups import GROUPS, matching_group, adjust_group
 from text_layout import ELEMENTS, props as text_props, validate_styles
 from turzx_dashboard import Weather, TrainState, choose_trains, jp_now, render_original
 from version_info import APP_VERSION
@@ -92,6 +93,7 @@ class LayoutEditor:
 
         bottom=ttk.Frame(self.window,padding=(12,3,12,4));bottom.grid(row=3,column=0,sticky='ew')
         ttk.Button(bottom,text='実機へ即時反映（保存）',command=self.apply).pack(side='left',padx=(0,8))
+        ttk.Button(bottom,text='文字グループ一括調整',command=self.open_group_editor).pack(side='left',padx=(0,8))
         ttk.Button(bottom,text='プレビュー更新',command=self.refresh).pack(side='left',padx=(0,8))
         ttk.Button(bottom,text='閉じる',command=self.window.destroy).pack(side='right')
         ttk.Label(self.window,textvariable=self.status,foreground='#21709c',padding=(12,0,12,8)).grid(row=4,column=0,sticky='ew')
@@ -239,6 +241,64 @@ class LayoutEditor:
         chosen=colorchooser.askcolor(color=value if re.fullmatch('#[0-9A-Fa-f]{6}',value) else '#FFFFFF',
                                      parent=self.window,title='色選択')[1]
         if chosen:self.vars[name].set(chosen.upper())
+
+    def open_group_editor(self):
+        """Move and resize multiple related text labels without changing USB output.
+
+        The separate dialog does not change the current individual text editor
+        selection. All adjustments are staged until the main Apply button.
+        """
+        dialog=tk.Toplevel(self.window)
+        dialog.title('文字グループ一括調整')
+        dialog.geometry('525x270')
+        dialog.resizable(False,False)
+        dialog.transient(self.window)
+        frame=ttk.Frame(dialog,padding=15)
+        frame.pack(fill='both',expand=True)
+        ttk.Label(frame,text='同じ枠内の文字をまとめて調整',
+                  font=('Yu Gothic UI',12,'bold')).grid(row=0,column=0,columnspan=3,sticky='w',pady=(0,8))
+        ttk.Label(frame,text='文字グループ').grid(row=1,column=0,sticky='w')
+        chosen=tk.StringVar(value=matching_group(self.selected[1]))
+        ttk.Combobox(frame,textvariable=chosen,values=tuple(GROUPS),
+                     state='readonly',width=41).grid(row=1,column=1,columnspan=2,sticky='ew',padx=(9,0),pady=4)
+        values={}
+        labels=(('dx','左右移動（px）'),('dy','上下移動（px）'),('dsize','文字サイズ増減（px）'))
+        for row,(key,label) in enumerate(labels,start=2):
+            ttk.Label(frame,text=label).grid(row=row,column=0,sticky='w',pady=3)
+            values[key]=tk.StringVar(value='0')
+            entry=ttk.Spinbox(frame,from_=-50,to=50,textvariable=values[key],width=10)
+            entry.grid(row=row,column=1,sticky='w',padx=(9,6))
+            # Existing editor already uses numeric wheel; this dialog allows
+            # wheel increments as well without ever saving automatically.
+            def increment(event,name=key):
+                try:
+                    amount=int(values[name].get())
+                except (TypeError,ValueError):
+                    amount=0
+                delta=10 if event.state & 0x0001 else 1
+                if event.delta<0:delta=-delta
+                values[name].set(str(max(-250,min(250,amount+delta))))
+                return 'break'
+            entry.bind('<MouseWheel>',increment)
+        ttk.Label(frame,text='各文字の間隔・色は維持。値はプレビューだけに反映されます。',
+                  foreground='#597184').grid(row=5,column=0,columnspan=3,sticky='w',pady=(9,6))
+        actions=ttk.Frame(frame)
+        actions.grid(row=6,column=0,columnspan=3,sticky='w')
+        def preview_adjustment():
+            try:
+                staged=adjust_group(self.text_styles,self.panel_styles,chosen.get(),
+                                    dx=values['dx'].get(),dy=values['dy'].get(),
+                                    dsize=values['dsize'].get())
+                self.text_styles=staged
+                self.unsaved=True
+                self.status.set('文字グループを一括調整しました（未保存）。実機へ反映するには保存ボタンを押してください。')
+                self.load_selected()
+                self.refresh()
+                for var in values.values():var.set('0')
+            except (ValueError,TypeError) as exc:
+                messagebox.showwarning('一括調整できません',str(exc),parent=dialog)
+        ttk.Button(actions,text='プレビューへ適用',command=preview_adjustment).pack(side='left',padx=(0,10))
+        ttk.Button(actions,text='閉じる',command=dialog.destroy).pack(side='left')
 
     def reset_one(self):
         kind,key=self.selected
