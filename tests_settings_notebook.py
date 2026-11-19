@@ -31,8 +31,8 @@ class TestSettingsNotebook(unittest.TestCase):
         )
         self.assertEqual(len(self.gui._tab_canvases),4)
         self.assertEqual(self.gui.tabs.grid_info()['row'],1)
-        self.assertEqual(self.gui.root.geometry().split('x')[0],'800')
-        self.assertEqual(self.gui.root.geometry().split('x')[1].split('+')[0],'540')
+        self.assertEqual(self.gui.root.geometry().split('x')[0],'725')
+        self.assertEqual(self.gui.root.geometry().split('x')[1].split('+')[0],'505')
         # Save, weather API test, display start/stop, exit are NOT descendants
         # of any notebook page and remain in the fixed root footer.
         from tkinter import ttk
@@ -59,7 +59,7 @@ class TestSettingsNotebook(unittest.TestCase):
 
     def test_all_settings_still_participate_in_single_save(self):
         required={'port','show_seconds','clock_12h','ntp_server','ntp_sync_minutes',
-                  'clock_update_mode','weather_city','weather_latitude',
+                  'clock_update_mode','auto_start_display','weather_city','weather_latitude',
                   'weather_longitude','weather_update_minutes','weather_provider',
                   'weatherapi_key','train_source','ir_route','train_update_seconds',
                   'train_count','google_maps_api_key','auto_update_check'}
@@ -73,6 +73,7 @@ class TestSettingsNotebook(unittest.TestCase):
         self.gui.vars['show_seconds'].set(False)
         self.gui.vars['train_count'].set('2')
         self.gui.vars['auto_update_check'].set(False)
+        self.gui.vars['auto_start_display'].set(False)
         updated=self.gui.read_form()
         self.assertEqual(updated['weather_city'],'津幡町')
         self.assertEqual(updated['weather_provider'],'weatherapi')
@@ -80,6 +81,7 @@ class TestSettingsNotebook(unittest.TestCase):
         self.assertEqual(updated['train_count'],2)
         self.assertFalse(updated['show_seconds'])
         self.assertFalse(updated['auto_update_check'])
+        self.assertFalse(updated['auto_start_display'])
         self.assertEqual(updated['text_styles'],original['text_styles'])
         self.assertEqual(updated['panel_styles'],original['panel_styles'])
         self.assertEqual(self.gui.conf,original) # changes stay staged until Save
