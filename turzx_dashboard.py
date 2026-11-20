@@ -36,7 +36,7 @@ from panel_layout import draw_panel, validate_panels, settings as panel_settings
 from version_info import APP_VERSION
 from internet_clock import InternetClock, query_ntp, NTP_SERVER
 from weatherapi_provider import fetch_weatherapi, WeatherAPIError
-from rail_official_status import RailNotice, fetch_official_rail_notice
+from rail_official_status import RailNotice, fetch_official_rail_notice, display_notice_text
 from marquee_scheduler import MarqueeScheduler
 from weather_fusion import fetch_weather_evidence, judge_weather
 from contextlib import nullcontext
@@ -87,6 +87,7 @@ DEFAULTS = {
     'ir_route': 'via_kanazawa',  # via_kanazawa, kanazawa_tsubata, or kaga_kanazawa
     'train_update_seconds': 30,
     'rail_status_enabled': True,
+    'rail_status_summarize': False, # Optional conservative shorter LCD notices
     'rail_status_update_minutes': 5, # request public IR/JR sources at most every 5 min
     'rail_scroll_speed_px_s': 9.4, # marquee travel in pixels/second; 0 = stop
     'rail_scroll_fps': 10.0, # maximum desired USB scrolling frames/sec (1..30)
@@ -996,7 +997,9 @@ def render_original(now, weather, train_state, conf, hit_boxes=None, rail_notice
     # arrival, Kanazawa departure, and destination arrival. Do NOT combine
     # these into one text run: that silently shrinks digits on 480px hardware.
     panel('train')
-    rail_text=(rail_notice.text if rail_notice is not None else '運行情報：未確認')
+    rail_text=display_notice_text(
+        rail_notice if rail_notice is not None else '運行情報：未確認',
+        conf.get('rail_status_summarize',False))
     if skip_rail_notice:
         notice_box=notice_region(conf)
     else:
@@ -1160,6 +1163,7 @@ def read_live_settings():
     fresh['weather_update_minutes']=max(5,int(fresh['weather_update_minutes']))
     fresh['rail_status_update_minutes']=max(5,min(60,int(fresh.get('rail_status_update_minutes',5))))
     fresh['rail_status_enabled']=bool(fresh.get('rail_status_enabled',True))
+    fresh['rail_status_summarize']=bool(fresh.get('rail_status_summarize',False))
     speed=float(fresh.get('rail_scroll_speed_px_s',9.4))
     if not math.isfinite(speed) or not 0<=speed<=60:
         raise ValueError('横スクロール速度は0～60px/秒です')
@@ -1496,6 +1500,10 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
             else:
                 rail_notice=RailNotice('運行情報：表示OFF')
 
+            # The official line data remains unchanged. This switch only
+            # controls the exact string rendered in the marquee.
+            display_rail_text=display_notice_text(
+                rail_notice,conf.get('rail_status_summarize',False))
             # Sample the NTP/PC clock after fetching data. Timekeeping never
             # depends on how many USB frames were sent.
             now=jp_now()
@@ -1504,7 +1512,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                 weather.humidity,weather.wind,weather.code,weather.error,
                 weather.provider,weather.condition_text,weather.raw_condition_code,
                 weather.fetched.strftime('%H:%M') if weather.fetched else None,
-                train.status,rail_notice.text,
+                train.status,display_rail_text,
                 train.loaded.strftime('%H:%M') if train.loaded else None,
                 tuple((t.depart.isoformat(),t.arrive.isoformat(),t.line,t.platform) for t in train.trains),
                 now.date()
@@ -1515,7 +1523,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
             hm_due=hm!=last_hm
             sec_due=sec!=last_seconds
 
-            scrolling=notice_overflows(conf,rail_notice.text)
+            scrolling=notice_overflows(conf,display_rail_text)
             if scrolling:
                 if marquee.started_at is None:
                     marquee.reset(tick)
@@ -1577,7 +1585,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                     now,weather,train,conf,rail_notice=rail_notice,
                     skip_rail_notice=True)
                 picture=base_logical.copy()
-                draw_rail_notice(picture,conf,rail_notice.text,marquee_px)
+                draw_rail_notice(picture,conf,display_rail_text,marquee_px)
                 picture.transpose(Image.Transpose.ROTATE_180).save(PREVIEW)
                 force_full=False
                 did_update=True
@@ -1596,7 +1604,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                     if force_full or changed:
                         kind='full'
                         picture=base_logical.copy()
-                        draw_rail_notice(picture,conf,rail_notice.text,marquee_px)
+                        draw_rail_notice(picture,conf,display_rail_text,marquee_px)
                         send_bitmap(device,picture.transpose(Image.Transpose.ROTATE_180),0,0)
                         notice_sent=True
                         logger.info('Full frame sent (%s; weather=%s)',train.status,weather.error or 'OK')
@@ -1604,7 +1612,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                         # The clock ALWAYS takes priority over optional
                         # scrolling; never transfer a marquee frame first.
                         picture=base_logical.copy()
-                        draw_rail_notice(picture,conf,rail_notice.text,marquee_px)
+                        draw_rail_notice(picture,conf,display_rail_text,marquee_px)
                         physical=picture.transpose(Image.Transpose.ROTATE_180)
                         if hm_due:
                             kind='clock-minute'
@@ -1624,7 +1632,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                                 send_rotated_box(device,physical,seconds_region(conf,now))
                     elif marquee_changed:
                         patch,x,y=render_notice_patch(
-                            base_logical,conf,rail_notice.text,marquee_px,
+                            base_logical,conf,display_rail_text,marquee_px,
                             previous_scroll_px=previous_marquee_px)
                         notice_sent=True
                         if patch is None:
@@ -1709,6 +1717,8 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                                     weather_status='OK' if weather.error is None else '待機/エラー',
                                     train_status=train.status,
                                     rail_status=rail_notice.text,
+                                    rail_status_display=display_rail_text,
+                                    rail_status_summarize=bool(conf.get('rail_status_summarize',False)),
                                     rail_status_updated=rail_notice.fetched.isoformat() if rail_notice.fetched else '',
                                     settings_hash=last_settings_hash,
                                     clock_update_mode=conf.get('clock_update_mode','compact'),
