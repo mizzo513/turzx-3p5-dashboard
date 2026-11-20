@@ -82,11 +82,12 @@ class FirstLegAndAlignmentTests(unittest.TestCase):
             dash.render_original(self.now,dash.Weather(),state,self.conf,
                                  hit_boxes=boxes)
         for n in range(1,4):
-            self.assertEqual(captured[f'train_station_depart_{n}'],'加賀笠間発')
-            self.assertEqual(captured[f'train_station_kan_arr_{n}'],'金沢着')
+            self.assertIn('発車前',captured[f'train_service_first_{n}'])
+            self.assertNotIn(f'train_station_depart_{n}',captured)
+            self.assertNotIn(f'train_station_kan_arr_{n}',captured)
             self.assertNotIn(f'train_kan_dep_{n}',captured)
             self.assertNotIn(f'train_arrive_{n}',captured)
-            self.assertIn('番線着',captured[f'train_transfer_platform_{n}'])
+            self.assertIn('着',captured[f'train_transfer_platform_{n}'])
 
     def test_platforms_fixed_x_even_with_varying_transfer_minute_widths(self):
         state=dash.upcoming_from_ir_schedule(self.now,self.conf)
@@ -111,11 +112,35 @@ class FirstLegAndAlignmentTests(unittest.TestCase):
         xs={boxes[f'text:train_transfer_platform_{n}'][0] for n in range(1,4)}
         self.assertEqual(xs,{345})
         for i,delay in enumerate((3,12,105),1):
-            self.assertIn(f'乗換{delay}分',captions[f'train_detail_{i}'])
-            self.assertNotIn('番線',captions[f'train_detail_{i}'])
-            self.assertIn('番線',captions[f'train_transfer_platform_{i}'])
-            self.assertLess(boxes[f'text:train_detail_{i}'][2],
-                            boxes[f'text:train_transfer_platform_{i}'][0])
+            compact=captions[f'train_transfer_platform_{i}']
+            self.assertRegex(compact,rf'^\\d→\\d/{delay}分
+        self.assertEqual(GROUPS[matching_group('train_transfer_platform_1')][1],
+                         tuple(f'train_transfer_platform_{i}' for i in range(1,4)))
+
+    def test_platform_group_keeps_all_three_columns_aligned(self):
+        group=matching_group('train_transfer_platform_1')
+        changed=adjust_group({}, {}, group,dx=-4,dsize=1)
+        self.assertEqual(
+            [changed[f'train_transfer_platform_{i}']['x'] for i in range(1,4)],
+            [341,341,341])
+
+    def test_existing_routes_remain_available(self):
+        self.assertEqual(
+            dash.upcoming_from_ir_schedule(self.now,self.conf).trains[0].destination,
+            '津幡')
+        self.conf['ir_route']='kanazawa_tsubata'
+        legacy=dash.upcoming_from_ir_schedule(self.now,self.conf)
+        self.assertEqual(legacy.trains[0].origin,'金沢')
+        self.assertEqual(legacy.trains[0].destination,'津幡')
+
+
+if __name__=='__main__':
+    unittest.main()
+)
+            self.assertNotIn('乗換',compact)
+            self.assertNotIn('番線',compact)
+            self.assertLessEqual(boxes[f'text:train_transfer_platform_{i}'][2],
+                                 boxes[f'panel:train_{i}'][2])
         self.assertEqual(GROUPS[matching_group('train_transfer_platform_1')][1],
                          tuple(f'train_transfer_platform_{i}' for i in range(1,4)))
 
