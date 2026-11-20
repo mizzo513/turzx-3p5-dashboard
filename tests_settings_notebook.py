@@ -258,6 +258,16 @@ class TestSettingsNotebook(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.gui.read_form()
 
+    def test_rail_notice_summary_switch_defaults_off_and_saves(self):
+        self.assertIn('rail_status_summarize',self.gui.vars)
+        option=self.gui.vars['rail_status_summarize']
+        self.assertFalse(option.get())
+        self.assertIs(self.gui.read_form()['rail_status_summarize'],False)
+        option.set(True)
+        self.assertIs(self.gui.read_form()['rail_status_summarize'],True)
+        option.set(False)
+        self.assertIs(self.gui.read_form()['rail_status_summarize'],False)
+
     def test_scroll_fps_numeric_and_fixed_or_adaptive_gui_options(self):
         self.assertIn('rail_scroll_fps',self.gui.vars)
         self.assertIn('rail_scroll_fps_mode',self.gui.vars)
@@ -288,7 +298,7 @@ class TestSettingsNotebook(unittest.TestCase):
                   'weather_longitude','weather_update_minutes','weather_provider',
                   'weatherapi_key','train_source','ir_route','train_update_seconds',
                   'train_count','google_maps_api_key','auto_update_check',
-                  'rail_status_enabled','rail_status_update_minutes',
+                  'rail_status_enabled','rail_status_summarize','rail_status_update_minutes',
                   'rail_scroll_fps','rail_scroll_fps_mode'}
         self.assertTrue(required.issubset(self.gui.vars),required-set(self.gui.vars))
         original=copy.deepcopy(self.gui.conf)
