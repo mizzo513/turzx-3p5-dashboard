@@ -76,19 +76,20 @@ class SettingsWindow:
         ttk.Checkbutton(main,text='秒を表示する（毎秒更新）',variable=self.vars['show_seconds']).grid(row=r,column=0,columnspan=2,sticky='w');r+=1
         self.vars['clock_12h']=tk.BooleanVar(value=bool(self.conf.get('clock_12h',False)))
         ttk.Checkbutton(main,text='12時間表記',variable=self.vars['clock_12h']).grid(row=r,column=0,columnspan=2,sticky='w');r+=1
-        ttk.Label(main,text='時刻取得：NICT NTP（インターネット優先）',foreground='#21709c').grid(row=r,column=0,columnspan=3,sticky='w',pady=(6,2));r+=1
+        ttk.Label(main,text='時刻取得：NTP優先／失敗時はHTTPS（TimeAPI.io）',
+                  foreground='#21709c').grid(row=r,column=0,columnspan=3,sticky='w',pady=(6,2));r+=1
         self.field(main,'NTPサーバー','ntp_server',r,'ntp.nict.jp');r+=1
         self.field(main,'時刻再同期間隔（分）','ntp_sync_minutes',r,'30');r+=1
         self.ntp_sync_button=ttk.Button(
-            main,text='NTPサーバーと今すぐ同期',
+            main,text='時刻を今すぐ同期（NTP→HTTPS）',
             command=self.manual_ntp_sync)
         self.ntp_sync_button.grid(row=r,column=0,columnspan=2,sticky='w',pady=(5,3));r+=1
         self.ntp_sync_message=tk.StringVar(value='')
         ttk.Label(main,textvariable=self.ntp_sync_message,
                   foreground='#21709c',wraplength=610).grid(
                       row=r,column=0,columnspan=3,sticky='w',pady=(0,4));r+=1
-        ttk.Label(main,text='同期間隔を待たずに設定済みNTPサーバーへ問い合わせます。'
-                             'UDP 123が遮断されている場合は失敗を通知します。'
+        ttk.Label(main,text='同期間隔を無視してNTPを確認し、失敗時はHTTPSで再試行します。'
+                             '両方失敗した場合はPC時刻を使用。'
                              'PCのシステム時計は変更しません。',
                   foreground='#5c7184',wraplength=610).grid(
                       row=r,column=0,columnspan=3,sticky='w');r+=1
@@ -659,15 +660,18 @@ class SettingsWindow:
             self.ntp_manual_waiting=False
             stamp=state.get('ntp_manual_result_at','')
             if state.get('ntp_manual_result')=='success':
+                source=str(state.get('ntp_manual_source') or
+                           state.get('time_source') or '外部時刻')
+                detail=('（NTP接続不可のためHTTPSを使用）'
+                        if source=='HTTPS' else '')
                 self.ntp_sync_message.set(
-                    'NTP手動同期成功 '+stamp+'（'+
-                    str(state.get('ntp_server',''))+'）')
+                    '時刻同期成功 '+stamp+'［'+source+'］'+detail)
             else:
                 self.ntp_sync_message.set(
-                    'NTP手動同期失敗：'+
+                    '時刻同期失敗：'+
                     str(state.get('ntp_manual_error','原因不明')))
         elif state.get('ntp_manual_running'):
-            self.ntp_sync_message.set('NTPサーバーと同期中…')
+            self.ntp_sync_message.set('外部時刻と同期中（NTP→HTTPS）…')
 
     def poll_runtime(self):
         state=self.runtime_state()
@@ -763,7 +767,7 @@ class SettingsWindow:
             self.ntp_manual_baseline=baseline
             self.ntp_manual_waiting=True
             self.ntp_sync_message.set(
-                'NTP手動同期を要求しました。同期間隔を無視して実行します…')
+                '手動時刻同期を要求しました（NTP→HTTPS）。同期間隔を無視します…')
         else:
             self.ntp_sync_message.set(
                 '同期要求を送信できませんでした。表示アプリの状態を確認してください。')
