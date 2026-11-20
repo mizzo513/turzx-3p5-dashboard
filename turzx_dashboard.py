@@ -1038,10 +1038,10 @@ def render_original(now, weather, train_state, conf, hit_boxes=None, rail_notice
                 label(f'train_arrive_{n}',t.arrive.strftime('%H:%M'),12)
                 wait=max(0,int((t.transfer_depart-t.transfer_arrive).total_seconds()//60))
                 platforms=(t.transfer_arrival_platform or '?')+'→'+(t.transfer_departure_platform or '?')
-                # One fixed-position cell: "3→6/12分", or 直通 if
+                # One fixed-position cell: "3→6　12分" (full-width space), or 直通 if
                 # there is no transfer (even when train number changes).
                 label(f'train_transfer_platform_{n}',
-                      '直通' if t.direct else f'{platforms}/{wait}分')
+                      '直通' if t.direct else f'{platforms}　{wait}分')
                 if t.depart.date()>now.date():
                     label(f'train_detail_{n}','翌日発')
                 elif t.arrive.date()>t.depart.date():
