@@ -1,3 +1,3 @@
 # TURZX dashboard version (single source of truth).
-APP_VERSION = '3.9.13'
+APP_VERSION = '3.9.14'
 APP_ID = 'TURZX_3p5_Dashboard'
