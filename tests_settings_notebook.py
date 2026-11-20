@@ -268,6 +268,53 @@ class TestSettingsNotebook(unittest.TestCase):
         option.set(False)
         self.assertIs(self.gui.read_form()['rail_status_summarize'],False)
 
+    def test_manual_ntp_sync_button_and_google_routes_key_removed(self):
+        from version_info import APP_VERSION
+        from unittest.mock import patch
+        self.assertNotIn('google_maps_api_key',self.gui.vars)
+        self.assertEqual(
+            self.gui.ntp_sync_button.cget('text'),'NTPサーバーと今すぐ同期')
+        # A stopped engine cannot synchronize the displayed clock.
+        with patch.object(self.gui,'runtime_state',return_value=None):
+            self.gui.manual_ntp_sync()
+            self.assertIn('停止',self.gui.ntp_sync_message.get())
+
+        state={'app_version':APP_VERSION,'ntp_manual_completed':3}
+        with patch.object(self.gui,'runtime_state',return_value=state):
+            with patch('settings_gui.request_ntp_sync',return_value=True) as req:
+                self.gui.ntp_sync_button.invoke()
+                req.assert_called_once_with()
+        self.assertTrue(self.gui.ntp_manual_waiting)
+        self.assertEqual(self.gui.ntp_manual_baseline,3)
+        self.gui._update_manual_ntp_feedback({
+            'ntp_manual_completed':3,'ntp_manual_running':True})
+        self.assertIn('同期中',self.gui.ntp_sync_message.get())
+        self.gui._update_manual_ntp_feedback({
+            'ntp_manual_completed':4,
+            'ntp_manual_result':'success',
+            'ntp_manual_result_at':'11/20 11:15:30',
+            'ntp_server':'ntp.nict.jp'})
+        self.assertFalse(self.gui.ntp_manual_waiting)
+        self.assertIn('同期成功',self.gui.ntp_sync_message.get())
+
+        with patch.object(self.gui,'runtime_state',return_value={
+                'app_version':APP_VERSION,'ntp_manual_completed':4}):
+            with patch('settings_gui.request_ntp_sync',return_value=True):
+                self.gui.manual_ntp_sync()
+        self.gui._update_manual_ntp_feedback({
+            'ntp_manual_completed':5,
+            'ntp_manual_result':'failure',
+            'ntp_manual_error':'timed out'})
+        self.assertIn('同期失敗',self.gui.ntp_sync_message.get())
+        self.assertIn('timed out',self.gui.ntp_sync_message.get())
+
+        self.gui.vars['ntp_server'].set('other.ntp.example')
+        with patch.object(self.gui,'runtime_state',return_value=state):
+            with patch('settings_gui.request_ntp_sync') as req:
+                self.gui.manual_ntp_sync()
+                req.assert_not_called()
+        self.assertIn('保存',self.gui.ntp_sync_message.get())
+
     def test_scroll_fps_numeric_and_fixed_or_adaptive_gui_options(self):
         self.assertIn('rail_scroll_fps',self.gui.vars)
         self.assertIn('rail_scroll_fps_mode',self.gui.vars)
@@ -297,7 +344,7 @@ class TestSettingsNotebook(unittest.TestCase):
                   'clock_update_mode','auto_start_display','weather_city','weather_latitude',
                   'weather_longitude','weather_update_minutes','weather_provider',
                   'weatherapi_key','train_source','ir_route','train_update_seconds',
-                  'train_count','google_maps_api_key','auto_update_check',
+                  'train_count','auto_update_check',
                   'rail_status_enabled','rail_status_summarize','rail_status_update_minutes',
                   'rail_scroll_fps','rail_scroll_fps_mode'}
         self.assertTrue(required.issubset(self.gui.vars),required-set(self.gui.vars))
