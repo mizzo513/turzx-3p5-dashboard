@@ -10,7 +10,7 @@ from dataclasses import dataclass
 @dataclass
 class MarqueeScheduler:
     pixels_per_second: float = 9.4  # configurable via rail_scroll_speed_px_s
-    target_fps: float = 5.0
+    target_fps: float = 10.0
     pause_seconds: float = 2.0
     started_at: float | None = None
     next_frame_at: float = 0.0
@@ -31,8 +31,8 @@ class MarqueeScheduler:
 
     @property
     def interval(self):
-        # 5 fps when possible; lower the transfer frequency if the USB port
-        # cannot drain a 315x17 RGB565 patch quickly enough.
+        # Target 10 fps when possible. Adapt only to USB transfer throughput,
+        # never use second-boundary suppression to throttle the marquee.
         minimum = 1.0 / self.target_fps
         return max(minimum, min(0.8, self.transfer_ema_s * 1.5))
 
@@ -47,12 +47,9 @@ class MarqueeScheduler:
         offset = int((tick - self.started_at) * self.pixels_per_second + 1e-7)
         if offset == displayed_px:
             return None
-        # Noninterruptible COM writes must not be started just before the
-        # next second. The estimated transfer time is included in the margin.
-        safety_margin = max(0.12, self.transfer_ema_s * 1.3 + 0.06)
-        if clock_due or 1.0 - second_fraction <= safety_margin:
-            self.skipped_frames += 1
-            return None
+        # The clock has no reserved time window in V3.9.14: the caller may
+        # still send an existing clock update first, but seconds never cause
+        # the marquee scheduler to suppress a candidate.
         return offset
 
     def record_transfer(self, duration_s: float):
