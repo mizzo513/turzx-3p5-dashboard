@@ -37,6 +37,8 @@ from version_info import APP_VERSION
 from internet_clock import InternetClock, query_time_with_fallback, NTP_SERVER
 from weatherapi_provider import fetch_weatherapi, WeatherAPIError
 from rail_official_status import RailNotice, fetch_official_rail_notice, display_notice_text
+from train_operations import (TrainOperations, fetch_official_train_operations,
+                              public_train_status)
 from marquee_scheduler import MarqueeScheduler
 from weather_fusion import fetch_weather_evidence, judge_weather
 from contextlib import nullcontext
@@ -766,7 +768,7 @@ def fit_text(draw,xy,text,size,max_width,fill=WHITE,kind='ja',min_size=9):
     return draw.textbbox(xy,result,font=f)
 
 
-def style_label(draw, conf, key, text, min_size=8, max_width=None):
+def style_label(draw, conf, key, text, min_size=8, max_width=None, color_override=None):
     spec=style_props(conf,key)
     width=spec['max_width'] if max_width is None else max(spec['max_width'],max_width)
     width=max(1,min(width,W-spec['x']-1))
@@ -783,10 +785,10 @@ def style_label(draw, conf, key, text, min_size=8, max_width=None):
                                       spec['kind'],min_size=min_size)
         ink=draw.textbbox((0,0),shown,font=used_font)
         origin=(right_edge-ink[2],spec['y'])
-        draw.text(origin,shown,fill=spec['color'],font=used_font)
+        draw.text(origin,shown,fill=color_override or spec['color'],font=used_font)
         return draw.textbbox(origin,shown,font=used_font)
     return fit_text(draw,(spec['x'],spec['y']),text,spec['size'],width,
-                    spec['color'],spec['kind'],min_size=min_size)
+                    color_override or spec['color'],spec['kind'],min_size=min_size)
 
 
 def notice_region(conf):
@@ -950,15 +952,18 @@ def value_or_dash(val,formatter=lambda a: str(a)):
     return '---' if val is None else formatter(val)
 
 
-def render_original(now, weather, train_state, conf, hit_boxes=None, rail_notice=None, marquee_px=0, skip_rail_notice=False):
+def render_original(now, weather, train_state, conf, hit_boxes=None, rail_notice=None, marquee_px=0, skip_rail_notice=False, train_operations=None):
     """Draw logical 480x320 dashboard; optionally return actual text/panel hitboxes."""
     img=Image.new('RGB',(W,H),BG)
     d=ImageDraw.Draw(img)
     def panel(key):
         box=draw_panel(d,conf,key)
         if hit_boxes is not None:hit_boxes['panel:'+key]=box
-    def label(key,text,min_size=8,max_width=None):
-        box=style_label(d,conf,key,text,min_size=min_size,max_width=max_width)
+    def label(key,text,min_size=8,max_width=None,color=None):
+        options={'min_size':min_size,'max_width':max_width}
+        if color is not None:
+            options['color_override']=color
+        box=style_label(d,conf,key,text,**options)
         if hit_boxes is not None:hit_boxes['text:'+key]=box
 
     panel('header')
@@ -1014,45 +1019,56 @@ def render_original(now, weather, train_state, conf, hit_boxes=None, rail_notice
         if i<len(train_state.trains):
             t=train_state.trains[i]
             label(f'train_index_{n}',str(n))
+            # Two status cells replace all four redundant station labels.
+            # A plain timetable cannot confirm that a train is "normal":
+            # before its scheduled departure show 発車前; otherwise 未確認.
             if t.transfer_arrive is not None and t.transfer_depart is not None:
-                label(f'train_station_depart_{n}','発')
-                label(f'train_station_kan_arr_{n}','金沢着')
-                label(f'train_station_kan_dep_{n}','金沢発')
-                label(f'train_station_arrive_{n}','着')
+                numbers=[part.strip() for part in t.line.split(' / ',1)]
+                first=numbers[0] if numbers else ''
+                second=numbers[1] if len(numbers)>1 else first
+                first_label,first_color=public_train_status(
+                    first,t.depart,now,train_operations,'加賀笠間','金沢')
+                second_label,second_color=public_train_status(
+                    second,t.transfer_depart,now,train_operations,'金沢','津幡')
+                label(f'train_service_first_{n}',first_label,color=first_color)
+                label(f'train_service_second_{n}',second_label,color=second_color)
                 label(f'train_time_{n}',t.depart.strftime('%H:%M'),12)
                 label(f'train_kan_arr_{n}',t.transfer_arrive.strftime('%H:%M'),12)
                 label(f'train_kan_dep_{n}',t.transfer_depart.strftime('%H:%M'),12)
                 label(f'train_arrive_{n}',t.arrive.strftime('%H:%M'),12)
-                wait=int((t.transfer_depart-t.transfer_arrive).total_seconds()//60)
+                wait=max(0,int((t.transfer_depart-t.transfer_arrive).total_seconds()//60))
                 platforms=(t.transfer_arrival_platform or '?')+'→'+(t.transfer_departure_platform or '?')
-                caption=('直通（乗換不要）' if t.direct else f'乗換{wait}分')
-                if t.arrive.date()>t.depart.date():caption+=' 翌日着'
-                if t.depart.date()>now.date():caption='翌日発 '+caption
-                label(f'train_detail_{n}',caption)
-                # Independent fixed-X column: minutes can have different
-                # digit counts without shifting the platform position.
-                label(f'train_transfer_platform_{n}',platforms+'番線')
+                # One fixed-position cell: "3→6/12分", or 直通 if
+                # there is no transfer (even when train number changes).
+                label(f'train_transfer_platform_{n}',
+                      '直通' if t.direct else f'{platforms}/{wait}分')
+                if t.depart.date()>now.date():
+                    label(f'train_detail_{n}','翌日発')
+                elif t.arrive.date()>t.depart.date():
+                    label(f'train_detail_{n}','翌日着')
             elif (train_state.source=='ir_schedule'
                   and t.origin=='加賀笠間' and t.destination=='金沢'):
-                # Two actual station times, no invented onward connection.
-                label(f'train_station_depart_{n}','加賀笠間発')
-                label(f'train_station_kan_arr_{n}','金沢着')
+                first_label,first_color=public_train_status(
+                    t.line,t.depart,now,train_operations,'加賀笠間','金沢')
+                label(f'train_service_first_{n}',first_label,color=first_color)
                 label(f'train_time_{n}',t.depart.strftime('%H:%M'),12)
                 label(f'train_kan_arr_{n}',t.arrive.strftime('%H:%M'),12)
-                caption=(t.line or '列車')+'  '+str(
-                    int(round((t.arrive-t.depart).total_seconds()/60)))+'分'
-                if t.depart.date()>now.date():caption='翌日 '+caption
-                label(f'train_detail_{n}',caption)
-                if t.platform:
-                    label(f'train_transfer_platform_{n}',t.platform+'番線着')
+                label(f'train_transfer_platform_{n}',
+                      (t.platform+'着 ' if t.platform else '')+
+                      str(int(round((t.arrive-t.depart).total_seconds()/60)))+'分')
+                if t.depart.date()>now.date():
+                    label(f'train_detail_{n}','翌日発')
             else:
+                first_label,first_color=public_train_status(
+                    t.line,t.depart,now,train_operations,t.origin,t.destination)
+                label(f'train_service_first_{n}',first_label,color=first_color)
                 label(f'train_legacy_time_{n}',t.depart.strftime('%H:%M')+' → '+t.arrive.strftime('%H:%M'))
                 duration=int(round((t.arrive-t.depart).total_seconds()/60))
-                caption=(t.line or '列車')+'  '+f'{duration}分'
-                if t.depart.date()>now.date():caption='翌日 '+caption
-                elif t.arrive.date()>t.depart.date():caption+='  翌日着'
-                label(f'train_detail_{n}',caption)
-                if t.platform:label(f'train_transfer_platform_{n}',t.platform+'番線')
+                if t.depart.date()>now.date():
+                    label(f'train_detail_{n}','翌日発')
+                elif t.arrive.date()>t.depart.date():
+                    label(f'train_detail_{n}','翌日着')
+                label(f'train_transfer_platform_{n}',f'{duration}分')
         elif i==0:
             label('train_empty',train_state.status)
         else:
@@ -1063,9 +1079,10 @@ def render_original(now, weather, train_state, conf, hit_boxes=None, rail_notice
     return img
 
 
-def render_physical(now, weather, train_state, conf, rail_notice=None, marquee_px=0):
+def render_physical(now, weather, train_state, conf, rail_notice=None, marquee_px=0, train_operations=None):
     return render_original(now,weather,train_state,conf,
-                           rail_notice=rail_notice,marquee_px=marquee_px).transpose(Image.Transpose.ROTATE_180)
+                           rail_notice=rail_notice,marquee_px=marquee_px,
+                           train_operations=train_operations).transpose(Image.Transpose.ROTATE_180)
 
 
 def orientation_packet():
