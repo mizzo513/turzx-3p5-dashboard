@@ -35,6 +35,8 @@ class OperationRecord:
     start: str = ''
     end: str = ''
     source_url: str = ''
+    run_origin: str = ''
+    run_destination: str = ''
 
 
 @dataclass
@@ -125,10 +127,12 @@ def article_matches_day(text,day):
 
 def _scope(text):
     """Return an unambiguous cancelled segment or all-lines marker."""
-    match=re.search(r'[（(]([^()（）]{1,60})[)）]',text)
-    if not match:
+    groups=re.findall(r'[（(]([^()（）]{1,60})[)）]',text)
+    phrase=next((re.sub(r'\s+','',group) for group in groups
+                 if '全区間' in group or '全線' in group or
+                 len(re.findall('駅',group))>=2),None)
+    if not phrase:
         return None
-    phrase=re.sub(r'\s+','',match.group(1))
     if '全区間' in phrase or '全線' in phrase:
         return ('*','*')
     stops=re.findall(r'([^駅()（）～〜~\-－―間]{1,10})駅',phrase)
@@ -156,21 +160,43 @@ def parse_cancelled_article(html,day,url):
         segment=_scope(following)
         if not segment:
             continue
+        route_match=re.search(
+            r'([一-龥ぁ-んァ-ヶ]+)駅\s*\d{1,2}:\d{2}発.{0,28}?'
+            r'([一-龥ぁ-んァ-ヶ]+)行',following)
+        origin=route_match.group(1) if route_match else ''
+        dest=route_match.group(2) if route_match else ''
+        # An "all section" cancellation without its train's direction
+        # is ambiguous; do not apply it to a candidate merely sharing ID.
+        if segment==('*','*') and not (origin in INDEX and dest in INDEX):
+            continue
         found.append(OperationRecord(
             train_no=m.group(1),kind='cancelled',
-            start=segment[0],end=segment[1],source_url=url))
+            start=segment[0],end=segment[1],source_url=url,
+            run_origin=origin,run_destination=dest))
     return tuple(found)
 
 
 def affects_leg(record,start,end):
+    if start not in INDEX or end not in INDEX:
+        return False
+    c,d=sorted((INDEX[start],INDEX[end]))
+    if record.run_origin and record.run_destination:
+        if record.run_origin not in INDEX or record.run_destination not in INDEX:
+            # Unknown route direction must not be used to assert cancellation.
+            return False
+        original_direction=INDEX[record.run_destination]-INDEX[record.run_origin]
+        leg_direction=INDEX[end]-INDEX[start]
+        if not original_direction or not leg_direction or (original_direction>0)!=(leg_direction>0):
+            return False
+        route_a,route_b=sorted((
+            INDEX[record.run_origin],INDEX[record.run_destination]))
+        if max(route_a,c)>=min(route_b,d):
+            return False
     if record.start=='*' and record.end=='*':
         return True
     if record.start not in INDEX or record.end not in INDEX:
         return False
-    if start not in INDEX or end not in INDEX:
-        return False
     a,b=sorted((INDEX[record.start],INDEX[record.end]))
-    c,d=sorted((INDEX[start],INDEX[end]))
     return max(a,c)<min(b,d)
 
 
