@@ -10,7 +10,8 @@ from dataclasses import dataclass
 @dataclass
 class MarqueeScheduler:
     pixels_per_second: float = 9.4  # configurable via rail_scroll_speed_px_s
-    target_fps: float = 10.0
+    target_fps: float = 10.0  # user-requested cap; 1..30 frames/second
+    fps_mode: str = 'adaptive'  # adaptive (transfer-time aware) or fixed
     pause_seconds: float = 2.0
     started_at: float | None = None
     next_frame_at: float = 0.0
@@ -31,9 +32,16 @@ class MarqueeScheduler:
 
     @property
     def interval(self):
-        # Target 10 fps when possible. Adapt only to USB transfer throughput,
-        # never use second-boundary suppression to throttle the marquee.
+        """Requested cadence, or slower if recent USB-frame writes need it.
+
+        Fixed mode does not artificially delay frames for estimated transfer
+        cost. Since the serial sender is synchronous, real USB throughput
+        still limits actual FPS. Neither mode queues outdated frames.
+        """
         minimum = 1.0 / self.target_fps
+        if self.fps_mode == 'fixed':
+            return minimum
+        # Keep the established safety factor for the adaptive option.
         return max(minimum, min(0.8, self.transfer_ema_s * 1.5))
 
     def candidate(self, tick: float, displayed_px: int, *, clock_due: bool,
