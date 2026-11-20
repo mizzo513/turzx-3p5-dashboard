@@ -223,7 +223,8 @@ def display_notice_text(notice, summarize=False):
     or whether the disruption is confirmed versus merely possible.
     Unknown prose remains verbatim.
     """
-    message = notice.text if isinstance(notice, RailNotice) else str(notice)
+    # Also accept fixture/preview holders exposing a .text property.
+    message = str(getattr(notice, 'text', notice))
     if not summarize:
         return message
     # Apply longer phrases first to keep the type + uncertainty coupled.
