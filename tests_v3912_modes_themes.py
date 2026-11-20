@@ -140,30 +140,3 @@ class FirstLegAndAlignmentTests(unittest.TestCase):
 
 if __name__=='__main__':
     unittest.main()
-)
-            self.assertNotIn('乗換',compact)
-            self.assertNotIn('番線',compact)
-            self.assertLessEqual(boxes[f'text:train_transfer_platform_{i}'][2],
-                                 boxes[f'panel:train_{i}'][2])
-        self.assertEqual(GROUPS[matching_group('train_transfer_platform_1')][1],
-                         tuple(f'train_transfer_platform_{i}' for i in range(1,4)))
-
-    def test_platform_group_keeps_all_three_columns_aligned(self):
-        group=matching_group('train_transfer_platform_1')
-        changed=adjust_group({}, {}, group,dx=-4,dsize=1)
-        self.assertEqual(
-            [changed[f'train_transfer_platform_{i}']['x'] for i in range(1,4)],
-            [341,341,341])
-
-    def test_existing_routes_remain_available(self):
-        self.assertEqual(
-            dash.upcoming_from_ir_schedule(self.now,self.conf).trains[0].destination,
-            '津幡')
-        self.conf['ir_route']='kanazawa_tsubata'
-        legacy=dash.upcoming_from_ir_schedule(self.now,self.conf)
-        self.assertEqual(legacy.trains[0].origin,'金沢')
-        self.assertEqual(legacy.trains[0].destination,'津幡')
-
-
-if __name__=='__main__':
-    unittest.main()
