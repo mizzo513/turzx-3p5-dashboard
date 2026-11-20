@@ -17,6 +17,7 @@ class IPCState:
     status: dict = field(default_factory=dict)
     stop_requested: threading.Event = field(default_factory=threading.Event)
     reconnect_requested: threading.Event = field(default_factory=threading.Event)
+    ntp_sync_requested: threading.Event = field(default_factory=threading.Event)
     lock: threading.Lock = field(default_factory=threading.Lock)
 
     def update(self, **values):
@@ -41,6 +42,11 @@ class _Handler(socketserver.StreamRequestHandler):
                 response = {'ok': True}
             elif command == 'RECONNECT':
                 self.server.state.reconnect_requested.set()
+                response = {'ok': True}
+            elif command == 'SYNC_NTP':
+                # Signal the engine: the GUI never performs an independent
+                # sync that would fail to update the LCD's actual clock.
+                self.server.state.ntp_sync_requested.set()
                 response = {'ok': True}
             else:
                 response = {'error': 'unknown command'}
@@ -106,5 +112,13 @@ def request_reconnect():
     """Ask the running USB engine to close and re-open its port safely."""
     try:
         return bool(send_command('RECONNECT').get('ok'))
+    except (OSError, ValueError, TypeError):
+        return False
+
+
+def request_ntp_sync():
+    """Ask the active display engine to synchronize NTP immediately."""
+    try:
+        return bool(send_command('SYNC_NTP').get('ok'))
     except (OSError, ValueError, TypeError):
         return False
