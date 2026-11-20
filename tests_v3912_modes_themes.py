@@ -113,7 +113,7 @@ class FirstLegAndAlignmentTests(unittest.TestCase):
         self.assertEqual(xs,{345})
         for i,delay in enumerate((3,12,105),1):
             compact=captions[f'train_transfer_platform_{i}']
-            self.assertRegex(compact,rf'^\d→\d/{delay}分\Z')
+            self.assertRegex(compact,rf'^\d→\d　{delay}分\Z')
             self.assertNotIn('乗換',compact)
             self.assertNotIn('番線',compact)
             self.assertLessEqual(boxes[f'text:train_transfer_platform_{i}'][2],
