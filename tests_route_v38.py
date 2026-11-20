@@ -58,10 +58,13 @@ class KagaKasamaRouteTests(unittest.TestCase):
         image=app.render_original(self.now,app.Weather(city='白山市'),rows,self.conf,hit_boxes=hit)
         self.assertEqual(image.size,(480,320))
         for n in (1,2,3):
-            for field in ('train_station_depart','train_station_kan_arr',
-                          'train_station_kan_dep','train_station_arrive',
-                          'train_time','train_kan_arr','train_kan_dep','train_arrive','train_detail'):
+            for field in ('train_service_first','train_service_second',
+                          'train_time','train_kan_arr','train_kan_dep',
+                          'train_arrive','train_transfer_platform'):
                 self.assertIn(f'text:{field}_{n}',hit)
+            for removed in ('train_station_depart','train_station_kan_arr',
+                            'train_station_kan_dep','train_station_arrive'):
+                self.assertNotIn(f'text:{removed}_{n}',hit)
             x0,y0,x1,y1=hit[f'text:train_time_{n}']
             self.assertTrue(170<=x0<x1<245)
             panel=hit[f'panel:train_{n}']
