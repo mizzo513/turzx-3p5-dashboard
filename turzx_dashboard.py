@@ -1647,7 +1647,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                                     clock_update_mode=conf.get('clock_update_mode','compact'),
                                     **CLOCK.state())
                 last_status=tick
-            time.sleep(.02)  # <=20ms polling jitter when USB is idle
+            time.sleep(.01)  # <=10ms idle polling interval for the 100ms marquee cadence
     finally:
         if device:
             try:device.close()
