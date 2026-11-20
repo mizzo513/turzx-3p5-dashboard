@@ -51,7 +51,16 @@ class MarqueeScheduler:
             return None
         if tick < self.started_at:
             return None
-        self.next_frame_at = tick + self.interval
+        # Advance the periodic deadline from the previous target time,
+        # not from the time this iteration happened to run. This avoids
+        # accumulating 5–15 ms of polling drift on every frame. If USB
+        # transfers were slow, discard missed deadlines rather than queue
+        # stale frames. The next pixel position still derives from elapsed
+        # monotonic time.
+        interval=self.interval
+        due=self.next_frame_at
+        missed=max(1,int((tick-due+1e-9)//interval)+1)
+        self.next_frame_at=due+missed*interval
         offset = int((tick - self.started_at) * self.pixels_per_second + 1e-7)
         if offset == displayed_px:
             return None
