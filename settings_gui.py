@@ -169,6 +169,17 @@ class SettingsWindow:
         ttk.Checkbutton(main,text='公式運行情報を表示（IRいしかわ鉄道・JR七尾線）',
                         variable=self.vars['rail_status_enabled']).grid(
                             row=r,column=0,columnspan=3,sticky='w',pady=(0,5));r+=1
+        self.vars['rail_status_summarize']=tk.BooleanVar(
+            value=bool(self.conf.get('rail_status_summarize',False)))
+        ttk.Checkbutton(
+            main,text='運行情報の文章を要約する（ON＝短縮 / OFF＝従来表示）',
+            variable=self.vars['rail_status_summarize']).grid(
+                row=r,column=0,columnspan=3,sticky='w',pady=(0,3));r+=1
+        ttk.Label(
+            main,text='区間・日時・原因・可能性の区別は維持し、定型表現だけを短縮します。'
+                      '変更は保存後に表示へ反映されます。',
+            foreground='#5c7184',wraplength=610).grid(
+                row=r,column=0,columnspan=3,sticky='w',pady=(0,6));r+=1
         self.field(main,'運行情報の確認間隔（分）','rail_status_update_minutes',r,'5');r+=1
         self.field(main,'横スクロール速度（px/秒）','rail_scroll_speed_px_s',r,'9.4');r+=1
         ttk.Label(main,text='スクロール更新頻度（fps）').grid(
