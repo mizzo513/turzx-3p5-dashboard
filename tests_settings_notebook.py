@@ -8,6 +8,7 @@ import copy
 import os
 import tkinter as tk
 import unittest
+from unittest.mock import patch
 
 from settings_gui import SettingsWindow
 
@@ -15,6 +16,14 @@ from settings_gui import SettingsWindow
 @unittest.skipUnless(os.name=='nt','Tk GUI integration requires Windows runner')
 class TestSettingsNotebook(unittest.TestCase):
     def setUp(self):
+        # The actual pixel-geometry test maps the real window and processes
+        # Tk events. Suppress scheduled USB auto-start, update checks and
+        # runtime polling: testing the tab visuals must not launch a second
+        # dashboard engine or alter shared runtime_status.json.
+        for target in ('_autostart_engine','check_github_update','poll_runtime'):
+            mock=patch.object(SettingsWindow,target,lambda self,*args,**kw: None)
+            mock.start()
+            self.addCleanup(mock.stop)
         self.root=tk.Tk()
         self.root.withdraw()
         self.gui=SettingsWindow(self.root)
