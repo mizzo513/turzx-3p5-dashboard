@@ -95,7 +95,8 @@ class HeaderRefreshLayoutTests(unittest.TestCase):
         for i in range(1,4):
             p=boxes[f'panel:train_{i}']
             for key in ('train_time','train_kan_arr','train_kan_dep',
-                        'train_arrive','train_detail'):
+                        'train_arrive','train_service_first',
+                        'train_service_second','train_transfer_platform'):
                 b=boxes[f'text:{key}_{i}']
                 self.assertGreaterEqual(b[1],p[1])
                 self.assertLessEqual(b[3],p[3]+1,(i,key,b,p))
