@@ -34,7 +34,7 @@ from text_layout import (props as style_props, validate_styles, ELEMENTS,
                          WEATHER_RIGHT_ALIGNED_VALUES, HEADER_RIGHT_ALIGNED_VALUES)
 from panel_layout import draw_panel, validate_panels, settings as panel_settings
 from version_info import APP_VERSION
-from internet_clock import InternetClock, query_ntp, NTP_SERVER
+from internet_clock import InternetClock, query_time_with_fallback, NTP_SERVER
 from weatherapi_provider import fetch_weatherapi, WeatherAPIError
 from rail_official_status import RailNotice, fetch_official_rail_notice, display_notice_text
 from marquee_scheduler import MarqueeScheduler
@@ -1312,6 +1312,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
     manual_ntp_result=''
     manual_ntp_error=''
     manual_ntp_result_at=''
+    manual_ntp_source=''
     pool=ThreadPoolExecutor(max_workers=5)  # weather observation fetch runs independently
     try:
         try:STOP_PATH.unlink(missing_ok=True)
@@ -1332,31 +1333,37 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                 manual_ntp_active=manual_ntp_queued
                 manual_ntp_queued=False
                 ntp_future_server=str(conf.get('ntp_server',NTP_SERVER)).strip()
-                ntp_future=pool.submit(query_ntp,ntp_future_server,2.5)
+                ntp_future=pool.submit(query_time_with_fallback,ntp_future_server)
                 ntp_due=tick+max(5,int(conf.get('ntp_sync_minutes',30)))*60
                 if manual_ntp_active:
                     manual_ntp_result='running'
                     manual_ntp_error=''
             if ntp_future is not None and ntp_future.done():
                 try:
-                    sample=ntp_future.result()
-                    if sample.server!=str(conf.get('ntp_server',NTP_SERVER)).strip():
+                    sample,ntp_failure=ntp_future.result()
+                    # HTTPS is the expected alternate source; validate the
+                    # original NTP setting against the server used when the
+                    # request was submitted, not the HTTPS service hostname.
+                    if ntp_future_server!=str(conf.get('ntp_server',NTP_SERVER)).strip():
                         raise RuntimeError('同期中にNTPサーバー設定が変更されました')
-                    CLOCK.accept(sample)
-                    logger.info('NTP synchronized: %s, offset %.3fs, RTT %.3fs',
-                                sample.server,sample.offset_seconds,sample.rtt_seconds)
+                    CLOCK.accept(sample,fallback_reason=ntp_failure)
+                    logger.info('%s synchronized: %s, offset %.3fs, RTT %.3fs; NTP=%s',
+                                sample.source,sample.server,sample.offset_seconds,
+                                sample.rtt_seconds,ntp_failure or 'OK')
                     if manual_ntp_active:
                         manual_ntp_result='success'
+                        manual_ntp_source=sample.source
                         manual_ntp_error=''
                     # Corrected date may change the upcoming train list and header.
                     rail_due=0.0
                     last_hm=None;last_seconds=None;prev_data_signature=None
                 except Exception as exc:
                     CLOCK.failed(str(exc))
-                    logger.warning('NTP unavailable; using last sync or PC fallback: %s',exc)
+                    logger.warning('NTP and HTTPS time unavailable; using last sync or PC: %s',exc)
                     ntp_due=min(ntp_due,tick+60)
                     if manual_ntp_active:
                         manual_ntp_result='failure'
+                        manual_ntp_source=''
                         manual_ntp_error=str(exc)[:160]
                 if manual_ntp_active:
                     manual_ntp_completed+=1
@@ -1741,6 +1748,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                                     ntp_manual_running=bool(manual_ntp_active),
                                     ntp_manual_completed=manual_ntp_completed,
                                     ntp_manual_result=manual_ntp_result,
+                                    ntp_manual_source=manual_ntp_source,
                                     ntp_manual_error=manual_ntp_error,
                                     ntp_manual_result_at=manual_ntp_result_at,
                                     weather_city=weather.city,
