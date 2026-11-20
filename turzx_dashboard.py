@@ -89,6 +89,8 @@ DEFAULTS = {
     'rail_status_enabled': True,
     'rail_status_update_minutes': 5, # request public IR/JR sources at most every 5 min
     'rail_scroll_speed_px_s': 9.4, # marquee travel in pixels/second; 0 = stop
+    'rail_scroll_fps': 10.0, # maximum desired USB scrolling frames/sec (1..30)
+    'rail_scroll_fps_mode': 'adaptive', # adaptive or fixed
     'train_count': 3,
     'train_from': '金沢',
     'train_to': '津幡',
@@ -1162,6 +1164,17 @@ def read_live_settings():
     if not math.isfinite(speed) or not 0<=speed<=60:
         raise ValueError('横スクロール速度は0～60px/秒です')
     fresh['rail_scroll_speed_px_s']=speed
+    try:
+        fps=float(fresh.get('rail_scroll_fps',10.0))
+    except (TypeError,ValueError):
+        raise ValueError('スクロールfpsは数値で指定してください。') from None
+    if not math.isfinite(fps) or not 1<=fps<=30:
+        raise ValueError('スクロールfpsは1～30を指定してください。')
+    fresh['rail_scroll_fps']=fps
+    mode=fresh.get('rail_scroll_fps_mode','adaptive')
+    if mode not in ('fixed','adaptive'):
+        raise ValueError('スクロールfps方式は固定か自動調整を指定してください。')
+    fresh['rail_scroll_fps_mode']=mode
     if not str(fresh.get('port','')).strip():
         raise ValueError('Empty COM port')
     validate_styles(fresh)
@@ -1258,6 +1271,8 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
     previous_marquee_px=0
     marquee=MarqueeScheduler()
     marquee.pixels_per_second=float(conf.get('rail_scroll_speed_px_s',9.4))
+    marquee.target_fps=float(conf.get('rail_scroll_fps',10.0))
+    marquee.fps_mode=conf.get('rail_scroll_fps_mode','adaptive')
     base_logical=None
     scroll_transfer_ms=0.0
     scroll_transfer_width_px=0
@@ -1370,6 +1385,8 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                         train_every=max(10,int(conf['train_update_seconds']))
                         notice_every=max(5,int(conf.get('rail_status_update_minutes',5)))*60
                         marquee.pixels_per_second=float(conf.get('rail_scroll_speed_px_s',9.4))
+                        marquee.target_fps=float(conf.get('rail_scroll_fps',10.0))
+                        marquee.fps_mode=conf.get('rail_scroll_fps_mode','adaptive')
                         if port_name!=conf['port']:
                             port_name=conf['port']
                             if device is not None:
@@ -1555,7 +1572,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
             did_update=False
             notice_sent=False
             if no_usb and redraw:
-                # The preview follows exactly the same 5 fps scheduling.
+                # The preview follows the selected FPS mode and numeric rate.
                 base_logical=render_original(
                     now,weather,train,conf,rail_notice=rail_notice,
                     skip_rail_notice=True)
@@ -1674,6 +1691,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                                         if scroll_transfer_original_bytes else 0),
                                     scroll_target_fps=round(1.0/marquee.interval,2),
                                     scroll_requested_fps=marquee.target_fps,
+                                    scroll_fps_mode=marquee.fps_mode,
                                     scroll_effective_fps_10s=round(len(scroll_frame_timestamps)/10.0,2),
                                     scroll_sent_frames=marquee.sent_frames,
                                     scroll_skipped_frames=marquee.skipped_frames,
@@ -1696,7 +1714,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                                     clock_update_mode=conf.get('clock_update_mode','compact'),
                                     **CLOCK.state())
                 last_status=tick
-            time.sleep(.01)  # <=10ms idle polling interval for the 100ms marquee cadence
+            time.sleep(.005)  # 5ms idle polling: lower jitter at 15–30fps
     finally:
         if device:
             try:device.close()
