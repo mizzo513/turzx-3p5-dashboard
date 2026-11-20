@@ -804,13 +804,15 @@ def notice_overflows(conf, text):
     return measure.textlength(str(text),font=font(spec['size'],spec['kind']))>(x1-x0)
 
 
-def draw_rail_notice(image, conf, text, scroll_px=0):
-    """Draw a one-line marquee inside a clipped transparent overlay.
+def _rail_notice_overlay(conf, text, scroll_px=0):
+    """Return the exact logical clip and RGBA pixels of the visible notice.
 
-    This never spills into train times or panel edges. Static strings do not
-    move; only text wider than the available band is horizontally scrolled.
+    The full 315x17 viewport remains unchanged; only USB transfer geometry
+    shrinks. Clipping, font size, custom colors and scrolling are identical
+    to the full-frame renderer.
     """
-    x0,y0,x1,y1=notice_region(conf)
+    region=notice_region(conf)
+    x0,y0,x1,y1=region
     w,h=x1-x0,y1-y0
     spec=style_props(conf,'train_notice')
     message=str(text or '運行情報：未確認')
@@ -822,25 +824,49 @@ def draw_rail_notice(image, conf, text, scroll_px=0):
     scrollable=text_width>w
     gap=34
     offset=int(scroll_px)%(text_width+gap) if scrollable else 0
-    baseline=1-ink[1]  # place glyph ink at top, avoiding font ascent artifacts
-    color=spec['color']
-    d.text((-offset,baseline),message,font=ft,fill=color)
+    baseline=1-ink[1]  # identical visual position to previous releases
+    d.text((-offset,baseline),message,font=ft,fill=spec['color'])
     if scrollable:
-        d.text((text_width+gap-offset,baseline),message,font=ft,fill=color)
+        d.text((text_width+gap-offset,baseline),message,
+               font=ft,fill=spec['color'])
+    return region,overlay,scrollable
+
+
+def draw_rail_notice(image, conf, text, scroll_px=0):
+    """Render the full banner exactly as before, without leaking into panels."""
+    (x0,y0,x1,y1),overlay,scrollable=_rail_notice_overlay(conf,text,scroll_px)
     image.paste(overlay,(x0,y0),overlay)
     return (x0,y0,x1,y1),scrollable
 
 
-def render_notice_patch(base_logical, conf, text, scroll_px=0):
-    """Draw only the rail notice (background + text), preserving all styling.
+def render_notice_patch(base_logical, conf, text, scroll_px=0,
+                        previous_scroll_px=None):
+    """Return only the actual modified pixels as a USB RGB565 patch.
 
-    The cached base image contains all panels without the rail notice ink;
-    only a roughly 315x17-pixel RGB565 rectangle is transmitted over USB.
+    With `previous_scroll_px`, compare the old and new rendered strips:
+    changed pixels include BOTH newly drawn glyphs and cleared old glyphs.
+    No fixed 17px-height or 315px-width USB region is transmitted unless
+    the actual changed pixels require that much space. The screen's logical
+    layout and clipping stay exactly as before. If no pixel changed, return
+    (None, 0, 0) so the serial write can be skipped entirely.
     """
-    logical=base_logical.copy()
-    (x0,y0,x1,y1),_=draw_rail_notice(logical,conf,text,scroll_px)
-    patch=logical.crop((x0,y0,x1,y1)).transpose(Image.Transpose.ROTATE_180)
-    return patch,W-x1,H-y1
+    (x0,y0,x1,y1),overlay,_=_rail_notice_overlay(conf,text,scroll_px)
+    background=base_logical.crop((x0,y0,x1,y1))
+    current=background.copy()
+    current.paste(overlay,(0,0),overlay)
+    if previous_scroll_px is None:
+        previous=background
+    else:
+        _old_rect,old_overlay,_=_rail_notice_overlay(
+            conf,text,previous_scroll_px)
+        previous=background.copy()
+        previous.paste(old_overlay,(0,0),old_overlay)
+    diff=ImageChops.difference(previous,current).getbbox()
+    if diff is None:
+        return None,0,0
+    left,top,right,bottom=diff
+    patch=current.crop(diff).transpose(Image.Transpose.ROTATE_180)
+    return patch,W-(x0+right),H-(y0+bottom)
 
 
 def datetime_text(now, conf):
