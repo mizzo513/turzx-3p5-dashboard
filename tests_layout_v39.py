@@ -51,7 +51,9 @@ class V39LayoutTests(unittest.TestCase):
                 self.assertLess(y1,panel[3])
             for left,right in zip(cols,cols[1:]):
                 self.assertLess(left[2],right[0],(n,left,right))
-            self.assertIn(f'text:train_detail_{n}',boxes)
+            self.assertIn(f'text:train_service_first_{n}',boxes)
+            self.assertIn(f'text:train_service_second_{n}',boxes)
+            self.assertIn(f'text:train_transfer_platform_{n}',boxes)
 
     def test_status_is_in_header_and_no_timetable_footer(self):
         boxes={}
@@ -84,8 +86,9 @@ class V39LayoutTests(unittest.TestCase):
             return original(draw,conf,key,text,*args,**kwargs)
         with patch.object(app,'style_label',side_effect=spy):
             app.render_original(self.now,self.weather,self.train,self.conf)
-        self.assertIn('乗換3分',recorded['train_detail_1'])
-        self.assertNotIn('注意',recorded['train_detail_1'])
+        self.assertIn('/3分',recorded['train_transfer_platform_1'])
+        self.assertNotIn('乗換',recorded['train_transfer_platform_1'])
+        self.assertNotIn('注意',recorded['train_transfer_platform_1'])
         self.assertEqual(self.train.trains[0].transfer_arrive.strftime('%H:%M'),'13:42')
         self.assertEqual(self.train.trains[0].transfer_depart.strftime('%H:%M'),'13:45')
 
