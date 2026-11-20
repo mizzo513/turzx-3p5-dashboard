@@ -12,6 +12,7 @@ import hashlib
 import socket
 import csv
 import copy
+from collections import deque
 import json
 import logging
 import math
@@ -1233,6 +1234,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
     marquee.pixels_per_second=float(conf.get('rail_scroll_speed_px_s',9.4))
     base_logical=None
     scroll_transfer_ms=0.0
+    scroll_frame_timestamps=deque()  # last 10 seconds of successful USB marquee patches
     clock_display_lag_ms=0.0
     prev_frame=None
     prev_data_signature=None
@@ -1586,6 +1588,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                     if kind=='marquee':
                         marquee.record_transfer(duration)
                         scroll_transfer_ms=last_transfer_ms
+                        scroll_frame_timestamps.append(time.monotonic())
                     if hm_due or sec_due:
                         # Approximate boundary-to-send-complete timing; this
                         # is not a measurement of LCD physical refresh latency.
@@ -1612,6 +1615,8 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                 last_seconds=sec
                 previous_clock=hm+sec
             if tick-last_status>1.0:
+                while scroll_frame_timestamps and scroll_frame_timestamps[0] < tick-10.0:
+                    scroll_frame_timestamps.popleft()
                 save_runtime_status(app_version=APP_VERSION,
                                     connected=device is not None if not no_usb else False,
                                     usb_error=usb_error,
@@ -1619,6 +1624,8 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                                     last_transfer_kind=last_transfer_kind,
                                     scroll_transfer_ms=scroll_transfer_ms,
                                     scroll_target_fps=round(1.0/marquee.interval,2),
+                                    scroll_requested_fps=marquee.target_fps,
+                                    scroll_effective_fps_10s=round(len(scroll_frame_timestamps)/10.0,2),
                                     scroll_sent_frames=marquee.sent_frames,
                                     scroll_skipped_frames=marquee.skipped_frames,
                                     clock_packet_lag_ms=clock_display_lag_ms,
