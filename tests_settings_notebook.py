@@ -258,13 +258,38 @@ class TestSettingsNotebook(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.gui.read_form()
 
+    def test_scroll_fps_numeric_and_fixed_or_adaptive_gui_options(self):
+        self.assertIn('rail_scroll_fps',self.gui.vars)
+        self.assertIn('rail_scroll_fps_mode',self.gui.vars)
+        selected=self.gui.vars['rail_scroll_fps_mode']
+        self.assertEqual(self.gui.read_form()['rail_scroll_fps'],10.0)
+        self.assertEqual(self.gui.read_form()['rail_scroll_fps_mode'],'adaptive')
+        options=[('固定（指定fps）','fixed'),
+                 ('自動調整（転送速度に応じて低下）','adaptive')]
+        for label,expected in options:
+            selected.set(label)
+            self.gui.vars['rail_scroll_fps'].set('17.5')
+            updated=self.gui.read_form()
+            self.assertEqual(updated['rail_scroll_fps_mode'],expected)
+            self.assertEqual(updated['rail_scroll_fps'],17.5)
+        for value in ('0','-1','30.1','nan','inf','abc',''):
+            with self.subTest(value=value):
+                self.gui.vars['rail_scroll_fps'].set(value)
+                with self.assertRaises(ValueError):
+                    self.gui.read_form()
+        self.gui.vars['rail_scroll_fps'].set('10')
+        selected.set('unknown')
+        with self.assertRaises(ValueError):
+            self.gui.read_form()
+
     def test_all_settings_still_participate_in_single_save(self):
         required={'port','show_seconds','clock_12h','ntp_server','ntp_sync_minutes',
                   'clock_update_mode','auto_start_display','weather_city','weather_latitude',
                   'weather_longitude','weather_update_minutes','weather_provider',
                   'weatherapi_key','train_source','ir_route','train_update_seconds',
                   'train_count','google_maps_api_key','auto_update_check',
-                  'rail_status_enabled','rail_status_update_minutes'}
+                  'rail_status_enabled','rail_status_update_minutes',
+                  'rail_scroll_fps','rail_scroll_fps_mode'}
         self.assertTrue(required.issubset(self.gui.vars),required-set(self.gui.vars))
         original=copy.deepcopy(self.gui.conf)
         self.gui.vars['weather_city'].set('津幡町')
