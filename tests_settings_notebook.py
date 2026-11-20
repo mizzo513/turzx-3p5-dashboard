@@ -85,31 +85,97 @@ class TestSettingsNotebook(unittest.TestCase):
         from tkinter import ttk
         self.assertEqual(self.gui.tabs.cget('style'),'TURZX.TNotebook')
         style=ttk.Style(self.root)
-        # Clam makes custom tab backgrounds effective on Windows native themes.
         self.assertEqual(style.theme_use(),'clam')
         tab_style='TURZX.TNotebook.Tab'
-        # Selected and inactive backgrounds use distinct, readable colors.
         self.assertNotEqual(
             style.lookup(tab_style,'background',('selected',)),
             style.lookup(tab_style,'background',('!selected',)))
         self.assertEqual(style.lookup(tab_style,'foreground',('selected',)),
                          '#FFFFFF')
+        max_width=max(
+            self.gui._tab_font.measure(self.gui.tabs.tab(p,'text'))
+            for p in self.gui.tabs.tabs())
+        self.assertGreaterEqual(
+            self.gui._tab_width_chars*self.gui._tab_font.measure('0'),
+            max_width)
         self.assertEqual(
-            self.gui._tab_width_px,
-            max(self.gui._tab_font.measure(self.gui.tabs.tab(p,'text'))
-                for p in self.gui.tabs.tabs())+44)
-        widths=[]
-        for page in self.gui.tabs.tabs():
-            label=self.gui.tabs.tab(page,'text')
-            padding=self.gui.tabs.tab(page,'padding')
-            if isinstance(padding,str):
-                padding=self.root.tk.splitlist(padding)
-            # Tk may return pixel values as strings.
-            left,top,right,bottom=(int(x) for x in padding)
-            self.assertEqual((top,bottom),(8,8))
-            widths.append(self.gui._tab_font.measure(label)+left+right)
-        self.assertEqual(len(set(widths)),1)
-        self.assertEqual(widths[0],self.gui._tab_width_px)
+            int(style.configure(tab_style,'width')),
+            self.gui._tab_width_chars)
+        # Clam's native "TNotebook.Tab" has a selected-only padding map.
+        # Testing expand alone missed the actual shrinking observed in screenshots.
+        expected=('18','8','18','8')
+        for state in (('selected',),('active',),('!selected',),()):
+            pad=style.lookup(tab_style,'padding',state)
+            self.assertEqual(
+                tuple(str(v) for v in self.root.tk.splitlist(pad)),
+                expected,(state,pad))
+            expand=style.lookup(tab_style,'expand',state)
+            self.assertEqual(
+                tuple(str(v) for v in self.root.tk.splitlist(expand)),
+                ('0','0','0','0'),(state,expand))
+
+    def test_real_tab_geometry_constant_after_selection_and_theme_changes(self):
+        """Actually measure visible Tk tab hit boxes, not tab option values."""
+        from theme_presets import PRESETS
+        # The setup withdraws the GUI so sizing tests need a mapped window.
+        self.root.deiconify()
+        try:
+            self.root.update()
+            notebook=self.gui.tabs
+            pages=notebook.tabs()
+            self.assertEqual(len(pages),4)
+
+            def point_to_tab(x,y):
+                try:
+                    return notebook.index(f'@{x},{y}')
+                except tk.TclError:
+                    return None
+
+            def geometry():
+                # Find the horizontal strip intersecting all four tabs.
+                width=notebook.winfo_width()
+                for y in (16,20,24,28,32):
+                    indexes=[point_to_tab(x,y) for x in range(width)]
+                    spans=[]
+                    for i in range(4):
+                        xs=[x for x,idx in enumerate(indexes) if idx==i]
+                        if xs:
+                            spans.append((min(xs),max(xs)))
+                    if len(spans)==4:
+                        break
+                else:
+                    self.fail('Could not measure all visible notebook tabs')
+                out=[]
+                for i,(left,right) in enumerate(spans):
+                    x=(left+right)//2
+                    ys=[y for y in range(0,60)
+                        if point_to_tab(x,y)==i]
+                    self.assertTrue(ys,(i,left,right))
+                    out.append((left,right,len(ys),min(ys),max(ys)))
+                return out
+
+            original=None
+            # Compare actual hit-box widths/heights/positions after EVERY
+            # selection and palette change. A selected 30px-wide tab must fail.
+            for preset in PRESETS:
+                self.gui.vars['settings_color_preset'].set(preset)
+                self.gui._on_palette_change()
+                for page in pages:
+                    notebook.select(page)
+                    self.root.update()
+                    data=geometry()
+                    widths=[right-left+1 for left,right,_,_,_ in data]
+                    heights=[h for _,_,h,_,_ in data]
+                    self.assertLessEqual(max(widths)-min(widths),1,
+                                         (preset,page,widths))
+                    self.assertLessEqual(max(heights)-min(heights),1,
+                                         (preset,page,heights))
+                    if original is None:
+                        original=data
+                    self.assertEqual(data,original,(preset,page,data,original))
+        finally:
+            self.root.withdraw()
+            self.root.update_idletasks()
 
     def test_ten_palettes_switch_color_only_and_are_saved(self):
         from theme_presets import PRESETS
@@ -117,8 +183,8 @@ class TestSettingsNotebook(unittest.TestCase):
         self.assertEqual(len(PRESETS),10)
         style=ttk.Style(self.root)
         pages=self.gui.tabs.tabs()
-        before=[self.gui.tabs.tab(page,'padding') for page in pages]
         before_width=self.gui._tab_width_px
+        before_chars=self.gui._tab_width_chars
         for theme,colors in PRESETS.items():
             self.gui.vars['settings_color_preset'].set(theme)
             self.gui._on_palette_change()
@@ -137,9 +203,11 @@ class TestSettingsNotebook(unittest.TestCase):
                     ('0','0','0','0'),(theme,state,expand))
             self.assertNotEqual(colors['selected'],colors['tab'])
             self.assertEqual(before_width,self.gui._tab_width_px)
-            self.assertEqual(before,
-                             [self.gui.tabs.tab(page,'padding') for page in pages])
-            self.assertEqual(style.map('TURZX.TNotebook.Tab','padding'),[])
+            self.assertEqual(before_chars,self.gui._tab_width_chars)
+            self.assertEqual(
+                tuple(str(v) for v in self.root.tk.splitlist(
+                    style.lookup('TURZX.TNotebook.Tab','padding',('selected',)))),
+                ('18','8','18','8'))
             self.assertEqual(style.map('TURZX.TNotebook.Tab','font'),[])
             self.assertEqual(self.gui.read_form()['settings_color_preset'],theme)
         self.gui.vars['settings_color_preset'].set('存在しないテーマ')
