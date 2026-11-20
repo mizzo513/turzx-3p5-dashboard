@@ -30,7 +30,7 @@ jobs:
         run: |
           python -m compileall -q .
 
-      # Includes V3.9.18 summary toggle, official notice formatter and rendered marquee regression tests.
+      # Includes V3.9.20 NTP/HTTPS fallback, manual clock sync, official rail, and rendered marquee regressions.
       - name: Run GUI, official rail, weather, layout and updater regressions
         shell: pwsh
         run: |
