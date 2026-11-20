@@ -30,7 +30,7 @@ jobs:
         run: |
           python -m compileall -q .
 
-      # Includes V3.9.10 header timestamp layout, settings toolbar and migration tests.
+      # Includes V3.9.15 real Windows tab geometry tests (all four tabs x ten palettes).
       - name: Run GUI, official rail, weather, layout and updater regressions
         shell: pwsh
         run: |
