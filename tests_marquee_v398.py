@@ -13,32 +13,45 @@ from PIL import Image
 
 
 class TestMarqueeScheduler(unittest.TestCase):
-    def test_nominal_five_fps_and_original_travel_speed(self):
+    def test_nominal_ten_fps_and_original_travel_speed(self):
         sched=MarqueeScheduler()
         sched.reset(10.0)
-        self.assertAlmostEqual(sched.interval,0.2)
-        self.assertIsNone(sched.candidate(12.19,0,clock_due=False,second_fraction=.19))
-        at_200ms=sched.candidate(12.2,0,clock_due=False,second_fraction=.2)
-        self.assertIsNotNone(at_200ms)
-        self.assertLessEqual(at_200ms,2)
-        self.assertEqual(sched.candidate(12.4,at_200ms,clock_due=False,second_fraction=.4),3)
+        self.assertAlmostEqual(sched.interval,0.1)
+        self.assertIsNone(
+            sched.candidate(12.09,0,clock_due=False,second_fraction=.09))
+        # At 9.4 px/second the first 100ms may have no whole-pixel move.
+        self.assertIsNone(
+            sched.candidate(12.1,0,clock_due=False,second_fraction=.1))
+        at_200ms=sched.candidate(
+            12.2,0,clock_due=False,second_fraction=.2)
+        self.assertEqual(at_200ms,1)
+        self.assertEqual(
+            sched.candidate(12.3,at_200ms,clock_due=False,second_fraction=.3),
+            2)
 
-    def test_skipped_frame_does_not_slow_travel(self):
+    def test_skipped_com_positions_do_not_slow_travel(self):
         sched=MarqueeScheduler()
         sched.reset(0)
-        first=sched.candidate(2.2,0,clock_due=False,second_fraction=.2)
+        first=sched.candidate(
+            2.2,0,clock_due=False,second_fraction=.2)
         self.assertIsNotNone(first)
-        self.assertIsNone(sched.candidate(2.4,first,clock_due=True,second_fraction=.4))
-        self.assertEqual(sched.skipped_frames,1)
-        later=sched.candidate(2.6,first,clock_due=False,second_fraction=.6)
+        # A late transfer can skip candidate positions. The next offset
+        # catches up to monotonic elapsed time, not a frame counter.
+        later=sched.candidate(
+            2.6,first,clock_due=False,second_fraction=.6)
         self.assertGreater(later,first+1)
 
-    def test_near_second_boundary_is_reserved_for_clock(self):
+    def test_second_boundary_is_not_reserved_at_ten_fps(self):
         sched=MarqueeScheduler()
         sched.reset(0)
-        self.assertIsNone(sched.candidate(2.2,0,clock_due=False,second_fraction=.95))
-        self.assertEqual(sched.skipped_frames,1)
-        self.assertIsNotNone(sched.candidate(2.4,0,clock_due=False,second_fraction=.4))
+        at_boundary=sched.candidate(
+            2.2,0,clock_due=True,second_fraction=.99)
+        self.assertEqual(at_boundary,1)
+        self.assertEqual(sched.skipped_frames,0)
+        self.assertEqual(
+            sched.candidate(
+                2.4,at_boundary,clock_due=False,second_fraction=.01),
+            3)
 
     def test_adaptive_fps_on_slow_usb(self):
         sched=MarqueeScheduler()
@@ -47,9 +60,9 @@ class TestMarqueeScheduler(unittest.TestCase):
         self.assertAlmostEqual(sched.interval,.48)
         sched.record_transfer(.02)
         self.assertLess(sched.interval,.48)
-        self.assertGreaterEqual(sched.interval,.2)
+        self.assertGreaterEqual(sched.interval,.1)
         sched.reset(5)
-        self.assertAlmostEqual(sched.interval,.2)
+        self.assertAlmostEqual(sched.interval,.1)
 
     def test_disabled_and_reset(self):
         sched=MarqueeScheduler()
