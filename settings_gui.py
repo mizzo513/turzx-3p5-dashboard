@@ -171,8 +171,29 @@ class SettingsWindow:
                             row=r,column=0,columnspan=3,sticky='w',pady=(0,5));r+=1
         self.field(main,'運行情報の確認間隔（分）','rail_status_update_minutes',r,'5');r+=1
         self.field(main,'横スクロール速度（px/秒）','rail_scroll_speed_px_s',r,'9.4');r+=1
-        ttk.Label(main,text='0：静止、9.4：従来の移動速度、最大60px/秒。画面更新は最大10fpsで自動調整します。',
-                  foreground='#5c7184',wraplength=610).grid(row=r,column=0,columnspan=3,sticky='w',pady=(0,5));r+=1
+        ttk.Label(main,text='スクロール更新頻度（fps）').grid(
+            row=r,column=0,sticky='w',pady=5)
+        self.vars['rail_scroll_fps']=tk.StringVar(
+            value=str(self.conf.get('rail_scroll_fps',10.0)))
+        ttk.Entry(main,textvariable=self.vars['rail_scroll_fps'],width=16).grid(
+            row=r,column=1,sticky='w',padx=(10,0));r+=1
+        ttk.Label(main,text='fpsの制御方式').grid(row=r,column=0,sticky='w',pady=5)
+        fps_mode_values={'fixed':'固定（指定fps）',
+                         'adaptive':'自動調整（転送速度に応じて低下）'}
+        self.vars['rail_scroll_fps_mode']=tk.StringVar(
+            value=fps_mode_values.get(
+                self.conf.get('rail_scroll_fps_mode','adaptive'),
+                fps_mode_values['adaptive']))
+        self.fps_mode_combo=ttk.Combobox(
+            main,textvariable=self.vars['rail_scroll_fps_mode'],
+            values=list(fps_mode_values.values()),state='readonly',width=33)
+        self.fps_mode_combo.grid(row=r,column=1,sticky='w',padx=(10,0));r+=1
+        ttk.Label(main,
+                  text='fpsは1～30（小数可）。固定＝指定周期で送信を試行／'
+                       '自動＝指定fpsを上限にUSB転送時間から更新頻度を調整。'
+                       '実測fpsは通信速度と文字の移動量で変わります。',
+                  foreground='#5c7184',wraplength=600).grid(
+                      row=r,column=0,columnspan=3,sticky='w',pady=(0,5));r+=1
         links=ttk.Frame(main)
         links.grid(row=r,column=0,columnspan=3,sticky='w',pady=(0,6));r+=1
         ttk.Button(links,text='IR公式運行情報',
@@ -424,6 +445,18 @@ class SettingsWindow:
             raise ValueError('横スクロール速度は数値で指定してください。') from None
         if not math.isfinite(conf['rail_scroll_speed_px_s']) or not 0<=conf['rail_scroll_speed_px_s']<=60:
             raise ValueError('横スクロール速度は0～60px/秒で指定してください。')
+        try:
+            conf['rail_scroll_fps']=float(conf.get('rail_scroll_fps',10))
+        except (ValueError,TypeError):
+            raise ValueError('スクロールfpsは数値で指定してください。') from None
+        if not math.isfinite(conf['rail_scroll_fps']) or not 1<=conf['rail_scroll_fps']<=30:
+            raise ValueError('スクロールfpsは1～30の範囲で指定してください。')
+        fps_modes={'固定（指定fps）':'fixed',
+                   '自動調整（転送速度に応じて低下）':'adaptive'}
+        mode=conf.get('rail_scroll_fps_mode')
+        if mode not in fps_modes:
+            raise ValueError('スクロールfpsの制御方式を選び直してください。')
+        conf['rail_scroll_fps_mode']=fps_modes[mode]
         conf['train_update_seconds']=int(conf['train_update_seconds'])
         validate_preset(conf.get('settings_color_preset',DEFAULT_PRESET))
         choice=conf.get('ir_route','加賀笠間→金沢→津幡')
