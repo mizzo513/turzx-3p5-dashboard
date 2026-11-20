@@ -28,7 +28,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageChops
 from runtime_ipc import StatusServer, current_state
 from text_layout import (props as style_props, validate_styles, ELEMENTS,
                          WEATHER_RIGHT_ALIGNED_VALUES, HEADER_RIGHT_ALIGNED_VALUES)
