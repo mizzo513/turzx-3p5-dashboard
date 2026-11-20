@@ -661,7 +661,7 @@ class SettingsWindow:
             stamp=state.get('ntp_manual_result_at','')
             if state.get('ntp_manual_result')=='success':
                 source=str(state.get('ntp_manual_source') or
-                           state.get('time_source') or '外部時刻')
+                           state.get('time_source') or 'NTP')
                 detail=('（NTP接続不可のためHTTPSを使用）'
                         if source=='HTTPS' else '')
                 self.ntp_sync_message.set(
