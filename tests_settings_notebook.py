@@ -273,7 +273,7 @@ class TestSettingsNotebook(unittest.TestCase):
         from unittest.mock import patch
         self.assertNotIn('google_maps_api_key',self.gui.vars)
         self.assertEqual(
-            self.gui.ntp_sync_button.cget('text'),'NTPサーバーと今すぐ同期')
+            self.gui.ntp_sync_button.cget('text'),'時刻を今すぐ同期（NTP→HTTPS）')
         # A stopped engine cannot synchronize the displayed clock.
         with patch.object(self.gui,'runtime_state',return_value=None):
             self.gui.manual_ntp_sync()
@@ -295,7 +295,8 @@ class TestSettingsNotebook(unittest.TestCase):
             'ntp_manual_result_at':'11/20 11:15:30',
             'ntp_server':'ntp.nict.jp'})
         self.assertFalse(self.gui.ntp_manual_waiting)
-        self.assertIn('同期成功',self.gui.ntp_sync_message.get())
+        self.assertIn('時刻同期成功',self.gui.ntp_sync_message.get())
+        self.assertIn('NTP',self.gui.ntp_sync_message.get())
 
         with patch.object(self.gui,'runtime_state',return_value={
                 'app_version':APP_VERSION,'ntp_manual_completed':4}):
@@ -305,8 +306,18 @@ class TestSettingsNotebook(unittest.TestCase):
             'ntp_manual_completed':5,
             'ntp_manual_result':'failure',
             'ntp_manual_error':'timed out'})
-        self.assertIn('同期失敗',self.gui.ntp_sync_message.get())
+        self.assertIn('時刻同期失敗',self.gui.ntp_sync_message.get())
         self.assertIn('timed out',self.gui.ntp_sync_message.get())
+
+        # Same button must also report successful HTTPS fallback.
+        self.gui.ntp_manual_waiting=True
+        self.gui.ntp_manual_baseline=5
+        self.gui._update_manual_ntp_feedback({
+            'ntp_manual_completed':6,'ntp_manual_result':'success',
+            'ntp_manual_source':'HTTPS','time_source':'HTTPS',
+            'ntp_manual_result_at':'11/20 11:30:00'})
+        self.assertIn('HTTPS',self.gui.ntp_sync_message.get())
+        self.assertIn('時刻同期成功',self.gui.ntp_sync_message.get())
 
         self.gui.vars['ntp_server'].set('other.ntp.example')
         with patch.object(self.gui,'runtime_state',return_value=state):
