@@ -86,7 +86,7 @@ class V39LayoutTests(unittest.TestCase):
             return original(draw,conf,key,text,*args,**kwargs)
         with patch.object(app,'style_label',side_effect=spy):
             app.render_original(self.now,self.weather,self.train,self.conf)
-        self.assertIn('/3分',recorded['train_transfer_platform_1'])
+        self.assertIn('　3分',recorded['train_transfer_platform_1'])
         self.assertNotIn('乗換',recorded['train_transfer_platform_1'])
         self.assertNotIn('注意',recorded['train_transfer_platform_1'])
         self.assertEqual(self.train.trains[0].transfer_arrive.strftime('%H:%M'),'13:42')
