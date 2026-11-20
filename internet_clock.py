@@ -216,7 +216,7 @@ class InternetClock:
                         'time_estimated_error_ms':(
                             round(s.estimated_error_seconds*1000,1)
                             if s.estimated_error_seconds is not None else None)}
-            return {'time_source':'PC (外部時刻未同期)','ntp_server':s.server if s else '',
+            return {'time_source':'PC (NTP未同期)','ntp_server':s.server if s else '',
                     'ntp_age_seconds':None,'ntp_offset_seconds':None,
                     'ntp_error':self._error,
                     'time_sync_rtt_ms':None,'time_estimated_error_ms':None}
