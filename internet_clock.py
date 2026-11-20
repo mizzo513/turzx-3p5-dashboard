@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Internet-clock implementation using NTP (RFC 5905) and monotonic time.
+"""Internet clock: prefer NTP, fall back to HTTPS, then PC clock.
 
-NICT primary endpoint: ntp.nict.jp, UDP/123. No system time modification.
-When NTP is not available, use the computer clock (explicitly labelled).
+NICT NTP uses UDP/123; TimeAPI.io uses TLS over TCP/443. Both accepted
+samples anchor the display clock to time.monotonic(). Neither path sets
+the operating system's clock.
 """
 from __future__ import annotations
 from dataclasses import dataclass
@@ -11,11 +12,15 @@ import socket
 import struct
 import time
 import threading
+import json
+from urllib.request import Request, urlopen
 
 JST = timezone(timedelta(hours=9), name='JST')
 NTP_EPOCH = 2208988800
 NTP_SERVER = 'ntp.nict.jp'
 MAX_SYNC_AGE_SECONDS = 6 * 3600
+HTTPS_TIME_URL = 'https://timeapi.io/api/Time/current/zone?timeZone=Asia/Tokyo'
+HTTPS_MAX_BYTES = 8192
 
 
 @dataclass(frozen=True)
@@ -25,6 +30,8 @@ class NtpSample:
     monotonic_at_receive: float
     rtt_seconds: float
     offset_seconds: float
+    source: str = 'NTP'  # HTTPS uses the same monotonic sample representation
+    estimated_error_seconds: float | None = None
 
 
 def _encode_ntp_timestamp(unix_time: float) -> bytes:
@@ -91,6 +98,83 @@ def query_ntp(server: str=NTP_SERVER, timeout: float=2.5) -> NtpSample:
     return decode_reply(received,stamp,t1,t4,server,got_mono)
 
 
+class TimeSyncError(RuntimeError):
+    """Both external time sources failed; include independently useful causes."""
+    def __init__(self, ntp_error: str, https_error: str):
+        self.ntp_error = ntp_error
+        self.https_error = https_error
+        super().__init__(
+            'NTP: ' + ntp_error + ' / HTTPS: ' + https_error)
+
+
+def query_https_time(opener=urlopen, *, timeout: float=5.0) -> NtpSample:
+    """Get actual server-provided JST time via HTTPS; no browser/OCR needed.
+
+    The server's timestamp is assumed to represent approximately the request
+    midpoint, so adding half the round-trip time estimates the time at
+    receipt. The RTT/2 figure is a rough network uncertainty indicator,
+    NOT a guaranteed clock accuracy bound or an NTP-equivalent precision.
+    """
+    request=Request(HTTPS_TIME_URL,headers={
+        'Accept':'application/json',
+        'User-Agent':'TURZX-Dashboard/3.9 (clock fallback)'})
+    sent_unix=time.time()
+    sent_mono=time.monotonic()
+    with opener(request,timeout=timeout) as response:
+        payload=response.read(HTTPS_MAX_BYTES+1)
+    received_mono=time.monotonic()
+    if len(payload)>HTTPS_MAX_BYTES:
+        raise ValueError('HTTPS時刻応答が大きすぎます')
+    try:
+        doc=json.loads(payload)
+        if not isinstance(doc,dict) or str(doc.get('timeZone',''))!='Asia/Tokyo':
+            raise ValueError('HTTPS時刻のタイムゾーンが不正です')
+        value=str(doc['dateTime'])
+        server_time=datetime.fromisoformat(value.replace('Z','+00:00'))
+        if server_time.tzinfo is None:
+            # TimeAPI.io zone endpoint returns naive wall time in requested TZ.
+            server_time=server_time.replace(tzinfo=JST)
+        unix=server_time.timestamp()
+        if not 1_577_836_800 < unix < 4_102_444_800:  # years 2020..2100
+            raise ValueError('HTTPS時刻が有効範囲外です')
+    except (KeyError,TypeError,json.JSONDecodeError) as exc:
+        raise ValueError('HTTPS時刻の応答形式が不正です') from exc
+    rtt=max(0.0,received_mono-sent_mono)
+    at_receive=unix+rtt*0.5
+    # Estimate offset against a monotonic-relative local clock. It is used
+    # only for display diagnostics; system time is never modified.
+    local_at_receive=sent_unix+rtt
+    return NtpSample(
+        server='timeapi.io', utc_at_receive=at_receive,
+        monotonic_at_receive=received_mono, rtt_seconds=rtt,
+        offset_seconds=at_receive-local_at_receive,
+        source='HTTPS', estimated_error_seconds=rtt*0.5)
+
+
+def query_time_with_fallback(server: str=NTP_SERVER, *,
+                             ntp_timeout: float=2.5,
+                             https_timeout: float=5.0,
+                             ntp_query=None, https_query=None):
+    """Try NTP then HTTPS. Return (sample, ntp_failure_reason).
+
+    Dependency injection makes both network failure paths testable offline
+    without weakening the actual connection policy.
+    """
+    if ntp_query is None:
+        ntp_query=query_ntp
+    if https_query is None:
+        https_query=query_https_time
+    try:
+        return ntp_query(server,ntp_timeout),''
+    except Exception as ntp_exc:
+        ntp_error=str(ntp_exc) or type(ntp_exc).__name__
+    try:
+        return https_query(timeout=https_timeout),ntp_error
+    except Exception as https_exc:
+        https_error=str(https_exc) or type(https_exc).__name__
+        raise TimeSyncError(ntp_error,https_error) from https_exc
+
+
 class InternetClock:
     """Monotonic clock anchored to last successful network time synchronization."""
     def __init__(self, max_age_seconds: float=MAX_SYNC_AGE_SECONDS):
@@ -99,10 +183,10 @@ class InternetClock:
         self._max_age=float(max_age_seconds)
         self._error='未同期'
 
-    def accept(self, sample: NtpSample):
+    def accept(self, sample: NtpSample, *, fallback_reason: str=''):
         with self._lock:
             self._sample=sample
-            self._error=''
+            self._error=str(fallback_reason)[:160] if fallback_reason else ''
 
     def failed(self, error: str):
         with self._lock:
@@ -124,8 +208,15 @@ class InternetClock:
         with self._lock:
             s=self._sample
             if s is not None and 0 <= tick-s.monotonic_at_receive < self._max_age:
-                return {'time_source':'NTP','ntp_server':s.server,
+                return {'time_source':s.source,'ntp_server':s.server,
                         'ntp_age_seconds':int(tick-s.monotonic_at_receive),
-                        'ntp_offset_seconds':round(s.offset_seconds,3),'ntp_error':self._error}
-            return {'time_source':'PC (NTP未同期)','ntp_server':s.server if s else '',
-                    'ntp_age_seconds':None,'ntp_offset_seconds':None,'ntp_error':self._error}
+                        'ntp_offset_seconds':round(s.offset_seconds,3),
+                        'ntp_error':self._error,
+                        'time_sync_rtt_ms':round(s.rtt_seconds*1000,1),
+                        'time_estimated_error_ms':(
+                            round(s.estimated_error_seconds*1000,1)
+                            if s.estimated_error_seconds is not None else None)}
+            return {'time_source':'PC (外部時刻未同期)','ntp_server':s.server if s else '',
+                    'ntp_age_seconds':None,'ntp_offset_seconds':None,
+                    'ntp_error':self._error,
+                    'time_sync_rtt_ms':None,'time_estimated_error_ms':None}
