@@ -263,8 +263,16 @@ class SettingsWindow:
                         background=p['tab'],foreground=p['ink'],
                         font=self._tab_font,
                         relief='flat',borderwidth=1,
-                        padding=(22,8),bordercolor=p['border'])
+                        padding=(22,8),bordercolor=p['border'],
+                        # Clam's default selected-tab expansion is 2/2/2/0
+                        # pixels and makes the active tab taller. Override it.
+                        expand=(0,0,0,0))
         style.map('TURZX.TNotebook.Tab',
+                  # All states keep exactly the same box geometry. The only
+                  # selection indication is foreground/background color.
+                  expand=[('selected',(0,0,0,0)),
+                          ('active',(0,0,0,0)),
+                          ('!selected',(0,0,0,0))],
                   background=[('selected',p['selected']),
                               ('active',p['hover']),
                               ('!selected',p['tab'])],
