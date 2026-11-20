@@ -30,7 +30,7 @@ jobs:
         run: |
           python -m compileall -q .
 
-      # V3.9.21 release regression: train direction-safe status, unified transfer and clock/USB tests.
+      # V3.9.22 release regression: full-width train platform/wait separator and clock/USB tests.
       - name: Run GUI, official rail, weather, layout and updater regressions
         shell: pwsh
         run: |
