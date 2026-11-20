@@ -16,7 +16,7 @@ from tkinter import font as tkfont
 from pathlib import Path
 from turzx_dashboard import CITIES, CSV_PATH, JSON_PATH, IR_SCHEDULE_PATH, ROOT, resolve_ir_schedule, OFFICIAL_TIMETABLE, load_settings, save_settings, fetch_weather, load_schedule_csv, train_diagnostics, render_original, jp_now, Weather, choose_trains
 import webbrowser
-from runtime_ipc import get_runtime_status, request_stop, request_reconnect
+from runtime_ipc import get_runtime_status, request_stop, request_reconnect, request_ntp_sync
 from text_layout import validate_styles
 from panel_layout import validate_panels
 from version_info import APP_VERSION
@@ -30,6 +30,8 @@ class SettingsWindow:
         self.child=None
         self.await_hash=None
         self.last_message=''
+        self.ntp_manual_waiting=False
+        self.ntp_manual_baseline=0
         root.title('TURZX 3.5 設定 V'+APP_VERSION+'（即時反映）')
         # Compact notebook: each tab scrolls independently at high DPI.
         # The action/status bar stays on screen regardless of the selected tab.
@@ -77,7 +79,19 @@ class SettingsWindow:
         ttk.Label(main,text='時刻取得：NICT NTP（インターネット優先）',foreground='#21709c').grid(row=r,column=0,columnspan=3,sticky='w',pady=(6,2));r+=1
         self.field(main,'NTPサーバー','ntp_server',r,'ntp.nict.jp');r+=1
         self.field(main,'時刻再同期間隔（分）','ntp_sync_minutes',r,'30');r+=1
-        ttk.Label(main,text='UDP 123が遮断されている場合はPC時刻へ切替。同期成功後は最長6時間保持。PCの時計は変更しません。',foreground='#5c7184',wraplength=610).grid(row=r,column=0,columnspan=3,sticky='w');r+=1
+        self.ntp_sync_button=ttk.Button(
+            main,text='NTPサーバーと今すぐ同期',
+            command=self.manual_ntp_sync)
+        self.ntp_sync_button.grid(row=r,column=0,columnspan=2,sticky='w',pady=(5,3));r+=1
+        self.ntp_sync_message=tk.StringVar(value='')
+        ttk.Label(main,textvariable=self.ntp_sync_message,
+                  foreground='#21709c',wraplength=610).grid(
+                      row=r,column=0,columnspan=3,sticky='w',pady=(0,4));r+=1
+        ttk.Label(main,text='同期間隔を待たずに設定済みNTPサーバーへ問い合わせます。'
+                             'UDP 123が遮断されている場合は失敗を通知します。'
+                             'PCのシステム時計は変更しません。',
+                  foreground='#5c7184',wraplength=610).grid(
+                      row=r,column=0,columnspan=3,sticky='w');r+=1
         self.vars['clock_update_mode']=tk.StringVar(value=self.conf.get('clock_update_mode','compact'))
         ttk.Label(main,text='秒表示の転送方式').grid(row=r,column=0,sticky='w',pady=5)
         ttk.Combobox(main,textvariable=self.vars['clock_update_mode'],values=['compact','safe_strip'],state='readonly',width=25).grid(row=r,column=1,sticky='w',padx=(10,0));r+=1
@@ -217,7 +231,6 @@ class SettingsWindow:
                   foreground='#5c7184',wraplength=580).grid(
                       row=r,column=0,columnspan=3,sticky='w',pady=(0,6));r+=1
         self.paired_fields(main,r,('列車更新間隔（秒）','train_update_seconds'),('表示列車数','train_count'));r+=1
-        self.field(main,'Google Routes APIキー（任意）','google_maps_api_key',r,show='*');r+=1
         btnrow=ttk.Frame(main);btnrow.grid(row=r,column=0,columnspan=3,sticky='w',pady=(5,7));r+=1
         ttk.Button(btnrow,text='列車候補・データを診断',command=self.diagnose_trains).grid(row=0,column=0,sticky='w',padx=(0,8),pady=(0,4))
         ttk.Button(btnrow,text='同梱時刻表を開く',command=self.open_schedule).grid(row=0,column=1,sticky='w',padx=(0,8),pady=(0,4))
@@ -400,7 +413,7 @@ class SettingsWindow:
     def field(self, main, label, name, row, fallback=None, show=None):
         self.vars[name]=tk.StringVar(value=str(self.conf.get(name, fallback or '')))
         ttk.Label(main,text=label).grid(row=row,column=0,sticky='w',pady=4)
-        width=37 if name in ('weatherapi_key','google_maps_api_key') else (
+        width=37 if name=='weatherapi_key' else (
             31 if name=='ntp_server' else (18 if name in ('port','weather_city') else 16))
         ttk.Entry(main,textvariable=self.vars[name],show=show,width=width).grid(
             row=row,column=1,sticky='w',padx=(10,0))
@@ -638,8 +651,27 @@ class SettingsWindow:
     def runtime_state(self):
         return get_runtime_status()
 
+    def _update_manual_ntp_feedback(self,state):
+        if not self.ntp_manual_waiting or not state:
+            return
+        completed=int(state.get('ntp_manual_completed',0) or 0)
+        if completed>self.ntp_manual_baseline:
+            self.ntp_manual_waiting=False
+            stamp=state.get('ntp_manual_result_at','')
+            if state.get('ntp_manual_result')=='success':
+                self.ntp_sync_message.set(
+                    'NTP手動同期成功 '+stamp+'（'+
+                    str(state.get('ntp_server',''))+'）')
+            else:
+                self.ntp_sync_message.set(
+                    'NTP手動同期失敗：'+
+                    str(state.get('ntp_manual_error','原因不明')))
+        elif state.get('ntp_manual_running'):
+            self.ntp_sync_message.set('NTPサーバーと同期中…')
+
     def poll_runtime(self):
         state=self.runtime_state()
+        self._update_manual_ntp_feedback(state)
         if state and state.get('app_version')!=APP_VERSION:
             ver=state.get('app_version') or '不明（旧版）'
             self.status.set('注意：表示エンジン V'+ver+' が動作中です。設定画面は V'+APP_VERSION+' です。表示停止→開始してください。')
@@ -705,6 +737,36 @@ class SettingsWindow:
                 out.close();err.close()
             self.status.set('非表示で起動しました。接続状況を確認しています…')
         except Exception as exc:messagebox.showerror('起動エラー',str(exc))
+
+    def manual_ntp_sync(self):
+        """Request an immediate resync of the running engine's real clock.
+
+        Using IPC ensures the on-device clock receives the sample rather than
+        only updating an unrelated GUI-side clock object.
+        """
+        state=self.runtime_state()
+        if not state:
+            self.ntp_sync_message.set(
+                '表示アプリが停止しています。先に「表示開始」を押してください。')
+            return
+        if state.get('app_version')!=APP_VERSION:
+            self.ntp_sync_message.set(
+                '表示エンジンのバージョンが異なります。表示停止→開始してください。')
+            return
+        server=str(self.vars['ntp_server'].get()).strip()
+        if server!=str(self.conf.get('ntp_server','')).strip():
+            self.ntp_sync_message.set(
+                'NTPサーバーの変更を「設定を即時反映」で保存してから実行してください。')
+            return
+        baseline=int(state.get('ntp_manual_completed',0) or 0)
+        if request_ntp_sync():
+            self.ntp_manual_baseline=baseline
+            self.ntp_manual_waiting=True
+            self.ntp_sync_message.set(
+                'NTP手動同期を要求しました。同期間隔を無視して実行します…')
+        else:
+            self.ntp_sync_message.set(
+                '同期要求を送信できませんでした。表示アプリの状態を確認してください。')
 
     def reconnect(self):
         """Reconnect the serial link without stopping the clock/rail engine."""
