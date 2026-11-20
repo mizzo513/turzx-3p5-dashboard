@@ -214,6 +214,34 @@ def parse_nanao(html):
     return LineInfo('七尾線')
 
 
+def display_notice_text(notice, summarize=False):
+    """Return the LCD text for a parsed official notice.
+
+    This is a presentation-only, conservative and reversible transformation.
+    OFF returns the exact previous display string. ON rewrites ONLY
+    recognized fixed phrases; never guesses a route, cause, date, severity
+    or whether the disruption is confirmed versus merely possible.
+    Unknown prose remains verbatim.
+    """
+    message = notice.text if isinstance(notice, RailNotice) else str(notice)
+    if not summarize:
+        return message
+    # Apply longer phrases first to keep the type + uncertainty coupled.
+    substitutions = (
+        ('遅延・見合わせの可能性', '遅延/見合わせの恐れ'),
+        ('運転見合わせの可能性', '見合わせの恐れ'),
+        ('運休の可能性', '運休の恐れ'),
+        ('遅延・見合わせ', '遅延/見合わせ'),
+        ('運転見合わせ', '見合わせ'),
+        ('　｜　', '｜'),
+        ('　/　', '｜'),
+        (' / ', '／'),
+    )
+    for old, new in substitutions:
+        message = message.replace(old, new)
+    return message
+
+
 def combine(ir, nanao, fetched=None):
     notifications=[item.detail for item in (ir,nanao) if item.state=='impacted']
     if notifications:
