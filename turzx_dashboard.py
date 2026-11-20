@@ -1251,6 +1251,7 @@ def release_singleton_lock(fh):
 
 def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds=0):
     rail_notice=RailNotice()
+    train_operations=TrainOperations()
     weather=Weather(city=conf['weather_city'],provider=conf.get('weather_provider','weatherapi'))
     base_weather=weather
     train=TrainState([], '読込中',conf['train_source'])
@@ -1290,6 +1291,9 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
     weather_due=0.0
     notice_future=None
     notice_due=0.0
+    train_operations_future=None
+    train_operations_due=0.0
+    train_operations_date=None
     marquee_px=0
     previous_marquee_px=0
     marquee=MarqueeScheduler()
@@ -1429,6 +1433,10 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                         if any(prev_conf.get(k)!=conf.get(k) for k in ('rail_status_enabled','rail_status_update_minutes')):
                             notice_future=None
                             notice_due=0.0
+                            train_operations_future=None
+                            train_operations_due=0.0
+                            train_operations_date=None
+                            train_operations=TrainOperations()
                             marquee_px=0
                             marquee.disable()
                             if not conf.get('rail_status_enabled',True):
@@ -1551,8 +1559,31 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                         rail_notice=RailNotice('運行情報：未確認')
                         notice_due=min(notice_due,tick+60)
                     notice_future=None
+                # Train-level official cancellation postings are a separate,
+                # asynchronous query. Unknown trains are never assumed normal.
+                if train_operations_date!=now.date():
+                    train_operations=TrainOperations()
+                    train_operations_date=now.date()
+                    train_operations_due=0.0
+                    train_operations_future=None
+                if train_operations_future is None and tick>=train_operations_due:
+                    train_operations_future=pool.submit(
+                        fetch_official_train_operations,now.date())
+                    train_operations_due=tick+notice_every
+                if train_operations_future is not None and train_operations_future.done():
+                    try:
+                        found=train_operations_future.result()
+                        train_operations=found
+                        logger.info('Official train cancellations: %d, error=%s',
+                                    len(found.items),found.error)
+                    except Exception as exc:
+                        train_operations=TrainOperations(error=str(exc)[:180])
+                        train_operations_due=min(train_operations_due,tick+60)
+                    train_operations_future=None
             else:
                 rail_notice=RailNotice('運行情報：表示OFF')
+                train_operations=TrainOperations()
+                train_operations_future=None
 
             # The official line data remains unchanged. This switch only
             # controls the exact string rendered in the marquee.
@@ -1567,6 +1598,8 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                 weather.provider,weather.condition_text,weather.raw_condition_code,
                 weather.fetched.strftime('%H:%M') if weather.fetched else None,
                 train.status,display_rail_text,
+                tuple((r.train_no,r.kind,r.minutes,r.start,r.end)
+                      for r in train_operations.items),
                 train.loaded.strftime('%H:%M') if train.loaded else None,
                 tuple((t.depart.isoformat(),t.arrive.isoformat(),t.line,t.platform) for t in train.trains),
                 now.date()
@@ -1637,7 +1670,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                 # The preview follows the selected FPS mode and numeric rate.
                 base_logical=render_original(
                     now,weather,train,conf,rail_notice=rail_notice,
-                    skip_rail_notice=True)
+                    skip_rail_notice=True,train_operations=train_operations)
                 picture=base_logical.copy()
                 draw_rail_notice(picture,conf,display_rail_text,marquee_px)
                 picture.transpose(Image.Transpose.ROTATE_180).save(PREVIEW)
@@ -1651,7 +1684,7 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                 if base_logical is None or changed or hm_due or sec_due or force_full:
                     base_logical=render_original(
                         now,weather,train,conf,rail_notice=rail_notice,
-                        skip_rail_notice=True)
+                        skip_rail_notice=True,train_operations=train_operations)
                 transfer_start=time.monotonic()
                 kind='clock'
                 try:
@@ -1777,6 +1810,11 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                                     rail_scroll_speed_px_s=marquee.pixels_per_second,
                                     weather_status='OK' if weather.error is None else '待機/エラー',
                                     train_status=train.status,
+                                    train_operation_count=len(train_operations.items),
+                                    train_operation_error=train_operations.error,
+                                    train_operations_updated=(
+                                        train_operations.fetched.isoformat()
+                                        if train_operations.fetched else ''),
                                     rail_status=rail_notice.text,
                                     rail_status_display=display_rail_text,
                                     rail_status_summarize=bool(conf.get('rail_status_summarize',False)),
