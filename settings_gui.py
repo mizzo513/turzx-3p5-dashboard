@@ -259,17 +259,25 @@ class SettingsWindow:
         style.configure('TURZX.TNotebook',background=p['window'],
                         bordercolor=p['border'],borderwidth=1,
                         tabmargins=(3,4,3,0))
+        # Tk/Clam inherits a selected-only *padding* map from TNotebook.Tab
+        # (e.g. 6 4 6 2). Per-tab Notebook.tab(..., padding=...) does NOT
+        # override that state map. This is why the selected tab was visibly
+        # narrower despite setting the expand map to zero in V3.9.13.
+        # Fix both axes using constant mapped padding AND one shared label
+        # width. The largest Japanese caption determines that width.
+        fixed_padding=(18,8,18,8)
         style.configure('TURZX.TNotebook.Tab',
                         background=p['tab'],foreground=p['ink'],
                         font=self._tab_font,
                         relief='flat',borderwidth=1,
-                        padding=(22,8),bordercolor=p['border'],
-                        # Clam's default selected-tab expansion is 2/2/2/0
-                        # pixels and makes the active tab taller. Override it.
+                        padding=fixed_padding,bordercolor=p['border'],
+                        width=getattr(self,'_tab_width_chars',12),
+                        anchor='center',justify='center',
                         expand=(0,0,0,0))
         style.map('TURZX.TNotebook.Tab',
-                  # All states keep exactly the same box geometry. The only
-                  # selection indication is foreground/background color.
+                  padding=[('selected',fixed_padding),
+                           ('active',fixed_padding),
+                           ('!selected',fixed_padding)],
                   expand=[('selected',(0,0,0,0)),
                           ('active',(0,0,0,0)),
                           ('!selected',(0,0,0,0))],
@@ -299,22 +307,25 @@ class SettingsWindow:
         recolor(self.root)
 
     def _equalize_tab_widths(self):
-        """Use equal pixel widths, regardless of the Japanese label length.
+        """Give every native ttk tab the SAME actual width and height.
 
-        Notebook.tab(..., padding=...) is per tab and remains unchanged when
-        switching pages. Measure strings in the same font used for rendering.
+        The label element's `width` option is shared across all tabs. This
+        works with Clam's selected-state padding map, unlike per-tab padding
+        (which the theme overrides when a tab becomes selected).
         """
         pages=self.tabs.tabs()
         if not pages:
             return
-        labels=[self.tabs.tab(page,'text') for page in pages]
-        cell=max(self._tab_font.measure(label) for label in labels)+44
-        self._tab_width_px=cell
-        for page,label in zip(pages,labels):
-            remaining=cell-self._tab_font.measure(label)
-            left=remaining//2
-            right=remaining-left
-            self.tabs.tab(page,padding=(left,8,right,8))
+        longest=max(self._tab_font.measure(self.tabs.tab(page,'text'))
+                    for page in pages)
+        # Tk label width uses average character cells, not actual glyph px.
+        # Round up and reserve an extra cell for CJK font substitution/DPI.
+        unit=max(1,self._tab_font.measure('0'))
+        self._tab_width_chars=math.ceil(longest/unit)+1
+        self._tab_width_px=self._tab_width_chars*unit+36
+        ttk.Style(self.root).configure('TURZX.TNotebook.Tab',
+                                       width=self._tab_width_chars,
+                                       anchor='center',justify='center')
 
     def _create_settings_tab(self,title):
         """Create an independent scrollable page for compact or high-DPI screens."""
