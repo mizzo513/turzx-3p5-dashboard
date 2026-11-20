@@ -171,7 +171,7 @@ class SettingsWindow:
                             row=r,column=0,columnspan=3,sticky='w',pady=(0,5));r+=1
         self.field(main,'運行情報の確認間隔（分）','rail_status_update_minutes',r,'5');r+=1
         self.field(main,'横スクロール速度（px/秒）','rail_scroll_speed_px_s',r,'9.4');r+=1
-        ttk.Label(main,text='0：静止、9.4：従来の移動速度、最大60px/秒。画面更新は最大5fpsで自動調整します。',
+        ttk.Label(main,text='0：静止、9.4：従来の移動速度、最大60px/秒。画面更新は最大10fpsで自動調整します。',
                   foreground='#5c7184',wraplength=610).grid(row=r,column=0,columnspan=3,sticky='w',pady=(0,5));r+=1
         links=ttk.Frame(main)
         links.grid(row=r,column=0,columnspan=3,sticky='w',pady=(0,6));r+=1
