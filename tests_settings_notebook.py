@@ -128,6 +128,13 @@ class TestSettingsNotebook(unittest.TestCase):
             self.assertEqual(
                 style.lookup('TURZX.TNotebook.Tab','foreground',('selected',)),
                 colors['selected_ink'])
+            # Clam gives the selected tab 2px of extra expansion by default.
+            # The custom style must override this for every interaction state.
+            for state in (('selected',),('active',),('!selected',),()):
+                expand=style.lookup('TURZX.TNotebook.Tab','expand',state)
+                self.assertEqual(
+                    tuple(str(n) for n in self.root.tk.splitlist(expand)),
+                    ('0','0','0','0'),(theme,state,expand))
             self.assertNotEqual(colors['selected'],colors['tab'])
             self.assertEqual(before_width,self.gui._tab_width_px)
             self.assertEqual(before,
