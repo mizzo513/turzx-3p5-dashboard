@@ -881,7 +881,9 @@ def datetime_text(now, conf):
 
 
 def clock_minute_key(now,conf):
-    return datetime_text(now,conf)[:-2] if conf.get('show_seconds',True) else datetime_text(now,conf)
+    # The full string ends in ':SS'. Removing only the two digits left a
+    # dangling ':' and the IPC status appended another ':', producing ::SS.
+    return datetime_text(now,conf)[:-3] if conf.get('show_seconds',True) else datetime_text(now,conf)
 
 
 def clock_label_region(conf, now):
@@ -1304,6 +1306,12 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
     ntp_future=None
     ntp_future_server=None
     ntp_due=0.0
+    manual_ntp_queued=False
+    manual_ntp_active=False
+    manual_ntp_completed=0
+    manual_ntp_result=''
+    manual_ntp_error=''
+    manual_ntp_result_at=''
     pool=ThreadPoolExecutor(max_workers=5)  # weather observation fetch runs independently
     try:
         try:STOP_PATH.unlink(missing_ok=True)
@@ -1312,29 +1320,51 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
         except Exception:pass
         while not seconds or time.monotonic()-began<seconds:
             tick=time.monotonic()
+            ipc=current_state()
+            if ipc and ipc.ntp_sync_requested.is_set():
+                # Bypass the configured interval, including if an automatic
+                # sync is currently running. Retain one pending manual request.
+                ipc.ntp_sync_requested.clear()
+                manual_ntp_queued=True
+                logger.info('Manual NTP synchronization requested')
             # NTP requests are asynchronous: USB refresh and GUI remain responsive.
-            if ntp_future is None and tick>=ntp_due:
+            if ntp_future is None and (manual_ntp_queued or tick>=ntp_due):
+                manual_ntp_active=manual_ntp_queued
+                manual_ntp_queued=False
                 ntp_future_server=str(conf.get('ntp_server',NTP_SERVER)).strip()
                 ntp_future=pool.submit(query_ntp,ntp_future_server,2.5)
                 ntp_due=tick+max(5,int(conf.get('ntp_sync_minutes',30)))*60
+                if manual_ntp_active:
+                    manual_ntp_result='running'
+                    manual_ntp_error=''
             if ntp_future is not None and ntp_future.done():
                 try:
                     sample=ntp_future.result()
-                    if sample.server==str(conf.get('ntp_server',NTP_SERVER)).strip():
-                        CLOCK.accept(sample)
-                        logger.info('NTP synchronized: %s, offset %.3fs, RTT %.3fs',
-                                    sample.server,sample.offset_seconds,sample.rtt_seconds)
-                        # Corrected date may change the upcoming train list and header.
-                        rail_due=0.0
-                        last_hm=None;last_seconds=None;prev_data_signature=None
+                    if sample.server!=str(conf.get('ntp_server',NTP_SERVER)).strip():
+                        raise RuntimeError('同期中にNTPサーバー設定が変更されました')
+                    CLOCK.accept(sample)
+                    logger.info('NTP synchronized: %s, offset %.3fs, RTT %.3fs',
+                                sample.server,sample.offset_seconds,sample.rtt_seconds)
+                    if manual_ntp_active:
+                        manual_ntp_result='success'
+                        manual_ntp_error=''
+                    # Corrected date may change the upcoming train list and header.
+                    rail_due=0.0
+                    last_hm=None;last_seconds=None;prev_data_signature=None
                 except Exception as exc:
                     CLOCK.failed(str(exc))
                     logger.warning('NTP unavailable; using last sync or PC fallback: %s',exc)
                     ntp_due=min(ntp_due,tick+60)
+                    if manual_ntp_active:
+                        manual_ntp_result='failure'
+                        manual_ntp_error=str(exc)[:160]
+                if manual_ntp_active:
+                    manual_ntp_completed+=1
+                    manual_ntp_result_at=datetime.now(TZ).strftime('%m/%d %H:%M:%S')
+                manual_ntp_active=False
                 ntp_future=None
                 ntp_future_server=None
             now=jp_now()
-            ipc=current_state()
             if STOP_PATH.exists() or (ipc and ipc.stop_requested.is_set()):
                 logger.info('Stop requested from settings GUI')
                 STOP_PATH.unlink(missing_ok=True)
@@ -1707,6 +1737,12 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                                     preview_mode=no_usb,
                                     port=port_name,
                                     clock=hm+(':'+sec if sec else ''),
+                                    ntp_manual_pending=bool(manual_ntp_queued),
+                                    ntp_manual_running=bool(manual_ntp_active),
+                                    ntp_manual_completed=manual_ntp_completed,
+                                    ntp_manual_result=manual_ntp_result,
+                                    ntp_manual_error=manual_ntp_error,
+                                    ntp_manual_result_at=manual_ntp_result_at,
                                     weather_city=weather.city,
                                     weather_provider=weather.provider,
                                     weather_condition=weather.condition_text or weather_description(weather.code),
