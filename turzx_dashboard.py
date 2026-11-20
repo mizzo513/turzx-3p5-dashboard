@@ -1260,6 +1260,10 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
     marquee.pixels_per_second=float(conf.get('rail_scroll_speed_px_s',9.4))
     base_logical=None
     scroll_transfer_ms=0.0
+    scroll_transfer_width_px=0
+    scroll_transfer_height_px=0
+    scroll_transfer_bytes=0
+    scroll_transfer_original_bytes=0
     scroll_frame_timestamps=deque()  # last 10 seconds of successful USB marquee patches
     clock_display_lag_ms=0.0
     prev_frame=None
@@ -1602,11 +1606,23 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                             else:
                                 send_rotated_box(device,physical,seconds_region(conf,now))
                     elif marquee_changed:
-                        kind='marquee'
                         patch,x,y=render_notice_patch(
-                            base_logical,conf,rail_notice.text,marquee_px)
-                        send_bitmap(device,patch,x,y)
+                            base_logical,conf,rail_notice.text,marquee_px,
+                            previous_scroll_px=previous_marquee_px)
                         notice_sent=True
+                        if patch is None:
+                            # The scroll position changed, but not a single
+                            # visible LCD pixel did; skip the serial packet.
+                            kind='marquee-unchanged'
+                        else:
+                            kind='marquee'
+                            send_bitmap(device,patch,x,y)
+                            scroll_transfer_width_px=patch.width
+                            scroll_transfer_height_px=patch.height
+                            scroll_transfer_bytes=patch.width*patch.height*2
+                            rect=notice_region(conf)
+                            scroll_transfer_original_bytes=(
+                                (rect[2]-rect[0])*(rect[3]-rect[1])*2)
 
                     duration=time.monotonic()-transfer_start
                     last_transfer_ms=round(duration*1000,1)
@@ -1649,6 +1665,13 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                                     last_transfer_ms=last_transfer_ms,
                                     last_transfer_kind=last_transfer_kind,
                                     scroll_transfer_ms=scroll_transfer_ms,
+                                    scroll_transfer_width_px=scroll_transfer_width_px,
+                                    scroll_transfer_height_px=scroll_transfer_height_px,
+                                    scroll_transfer_bytes=scroll_transfer_bytes,
+                                    scroll_transfer_original_bytes=scroll_transfer_original_bytes,
+                                    scroll_transfer_reduction_pct=(
+                                        round(100*(1-scroll_transfer_bytes/scroll_transfer_original_bytes),1)
+                                        if scroll_transfer_original_bytes else 0),
                                     scroll_target_fps=round(1.0/marquee.interval,2),
                                     scroll_requested_fps=marquee.target_fps,
                                     scroll_effective_fps_10s=round(len(scroll_frame_timestamps)/10.0,2),
