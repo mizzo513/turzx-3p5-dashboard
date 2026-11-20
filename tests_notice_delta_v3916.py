@@ -10,7 +10,7 @@ import unittest
 from datetime import datetime
 from types import SimpleNamespace
 
-from PIL import ImageChops
+from PIL import Image, ImageChops
 
 from turzx_dashboard import (
     DEFAULTS, TZ, Weather, TrainState, W, H,
@@ -29,7 +29,7 @@ class TestAdaptiveNoticeTransfer(unittest.TestCase):
         return render_original(
             self.now,self.weather,self.train,conf,
             rail_notice=SimpleNamespace(text=text),
-            marquee_px=offset).transpose(__import__('PIL.Image',fromlist=['Transpose']).Transpose.ROTATE_180)
+            marquee_px=offset).transpose(Image.Transpose.ROTATE_180)
 
     def apply_patch(self,previous,patch,x,y):
         actual=previous.copy()
