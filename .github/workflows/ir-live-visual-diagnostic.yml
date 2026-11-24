@@ -1,0 +1,38 @@
+name: IR live screen-data comparison (diagnostic branch only)
+on:
+  push:
+    branches:
+      - ir-live-visual-diagnostic-20261125
+    paths:
+      - '.github/workflows/ir-live-visual-diagnostic.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout isolated diagnostic code
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install browser and OCR
+        shell: bash
+        run: |
+          python -m pip install --quiet playwright==1.56.0
+          python -m playwright install --with-deps chromium
+          sudo apt-get install -y -qq tesseract-ocr
+      - name: One-shot public live comparison (no site mutation)
+        shell: bash
+        run: |
+          python diagnostics/ir_visual_test.py
+      - name: Upload timestamped public-page screenshot and result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ir-live-visual-data
+          path: ir-capture/
+          retention-days: 7
