@@ -12,6 +12,7 @@ from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit
 from urllib.request import Request, urlopen
 import re
+from ir_live_operations import normalize_train_number, status_for_leg
 
 NEWS_URL='https://www.ishikawa-railway.jp/news/'
 HEADERS={'User-Agent':'TURZX-Dashboard/3.9 (personal-use train information)',
@@ -22,9 +23,9 @@ FETCH_TIMEOUT=8
 STATIONS=('敦賀','福井','芦原温泉','加賀温泉','小松','加賀笠間',
           '松任','金沢','東金沢','津幡','高松','七尾')
 INDEX={s:i for i,s in enumerate(STATIONS)}
-STATUS_COLORS={'運休':'#FC7471','遅延':'#FAC563',
+STATUS_COLORS={'取り止め':'#FC7471','遅延':'#FAC563',
                '正常':'#55E5A2','発車前':'#78B8EF',
-               '未確認':'#9CB9CA'}
+               '発車済':'#9CB9CA','未確認':'#9CB9CA'}
 
 
 @dataclass(frozen=True)
@@ -202,33 +203,38 @@ def affects_leg(record,start,end):
 
 def matching_record(operations,train_no,origin,destination):
     for record in getattr(operations,'items',()):
-        if record.train_no==str(train_no) and affects_leg(record,origin,destination):
+        if normalize_train_number(record.train_no)==normalize_train_number(train_no) and affects_leg(record,origin,destination):
             return record
     return None
 
 
 def public_train_status(train_no,depart,now,operations=None,
-                        origin='加賀笠間',destination='金沢'):
-    """Return (caption, color) using only supported train-specific proof.
+                        origin='加賀笠間',destination='金沢',live_trains=None):
+    """Combine official cancellation announcements and live train positions.
 
-    Timetable future departures are '発車前' by *schedule*, not by live
-    tracking. No reported issue is never translated to '正常'.
+    Priority: announced cancellation > announced/API delay > actual
+    passing of *boarding station* > active approaching train > departure
+    not yet scheduled > unverified. An absent API record never proves
+    cancellation or an already-departed train.
     """
     number=str(train_no or '').strip()
     rec=matching_record(operations,number,origin,destination)
-    if rec:
-        if rec.kind=='cancelled':
-            label='運休';color=STATUS_COLORS[label]
-        elif rec.kind=='delayed' and rec.minutes is not None and rec.minutes>0:
-            label=f'遅延 {rec.minutes}分';color=STATUS_COLORS['遅延']
-        elif rec.kind=='normal':
-            label='正常';color=STATUS_COLORS[label]
-        else:
-            label='未確認';color=STATUS_COLORS[label]
-    elif depart>now:
-        label='発車前';color=STATUS_COLORS[label]
+    if rec and rec.kind=='cancelled':
+        label='取り止め';color=STATUS_COLORS[label]
+    elif rec and rec.kind=='delayed' and rec.minutes is not None and rec.minutes>0:
+        label=f'遅延 {rec.minutes}分';color=STATUS_COLORS['遅延']
     else:
-        label='未確認';color=STATUS_COLORS[label]
+        live=status_for_leg(number,origin,destination,now,live_trains)
+        if live is not None:
+            label,color=live
+        elif rec and rec.kind=='normal':
+            label='正常';color=STATUS_COLORS[label]
+        elif depart>now:
+            # This is schedule-only until the train appears in the feed.
+            label='発車前';color=STATUS_COLORS[label]
+        else:
+            # Past scheduled time is not proof that a train passed the stop.
+            label='未確認';color=STATUS_COLORS[label]
     return (number or '列車')+' '+label,color
 
 
