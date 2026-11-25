@@ -39,6 +39,7 @@ from weatherapi_provider import fetch_weatherapi, WeatherAPIError
 from rail_official_status import RailNotice, fetch_official_rail_notice, display_notice_text
 from train_operations import (TrainOperations, fetch_official_train_operations,
                               public_train_status)
+from ir_live_operations import LiveTrainState, fetch_live_trains
 from marquee_scheduler import MarqueeScheduler
 from weather_fusion import fetch_weather_evidence, judge_weather
 from contextlib import nullcontext
@@ -88,6 +89,7 @@ DEFAULTS = {
     'train_source': 'ir_schedule',  # bundled IR timetable, csv, json, or google_transit
     'ir_route': 'via_kanazawa',  # via_kanazawa, kanazawa_tsubata, or kaga_kanazawa
     'train_update_seconds': 30,
+    'train_live_update_seconds': 30, # official /api/v1/trains, independent of static timetable
     'rail_status_enabled': True,
     'rail_status_summarize': False, # Optional conservative shorter LCD notices
     'rail_status_update_minutes': 5, # request public IR/JR sources at most every 5 min
@@ -952,7 +954,7 @@ def value_or_dash(val,formatter=lambda a: str(a)):
     return '---' if val is None else formatter(val)
 
 
-def render_original(now, weather, train_state, conf, hit_boxes=None, rail_notice=None, marquee_px=0, skip_rail_notice=False, train_operations=None):
+def render_original(now, weather, train_state, conf, hit_boxes=None, rail_notice=None, marquee_px=0, skip_rail_notice=False, train_operations=None, train_live=None):
     """Draw logical 480x320 dashboard; optionally return actual text/panel hitboxes."""
     img=Image.new('RGB',(W,H),BG)
     d=ImageDraw.Draw(img)
@@ -1027,9 +1029,9 @@ def render_original(now, weather, train_state, conf, hit_boxes=None, rail_notice
                 first=numbers[0] if numbers else ''
                 second=numbers[1] if len(numbers)>1 else first
                 first_label,first_color=public_train_status(
-                    first,t.depart,now,train_operations,'加賀笠間','金沢')
+                    first,t.depart,now,train_operations,'加賀笠間','金沢',train_live)
                 second_label,second_color=public_train_status(
-                    second,t.transfer_depart,now,train_operations,'金沢','津幡')
+                    second,t.transfer_depart,now,train_operations,'金沢','津幡',train_live)
                 label(f'train_service_first_{n}',first_label,color=first_color)
                 label(f'train_service_second_{n}',second_label,color=second_color)
                 label(f'train_time_{n}',t.depart.strftime('%H:%M'),12)
@@ -1049,7 +1051,7 @@ def render_original(now, weather, train_state, conf, hit_boxes=None, rail_notice
             elif (train_state.source=='ir_schedule'
                   and t.origin=='加賀笠間' and t.destination=='金沢'):
                 first_label,first_color=public_train_status(
-                    t.line,t.depart,now,train_operations,'加賀笠間','金沢')
+                    t.line,t.depart,now,train_operations,'加賀笠間','金沢',train_live)
                 label(f'train_service_first_{n}',first_label,color=first_color)
                 label(f'train_time_{n}',t.depart.strftime('%H:%M'),12)
                 label(f'train_kan_arr_{n}',t.arrive.strftime('%H:%M'),12)
@@ -1060,7 +1062,7 @@ def render_original(now, weather, train_state, conf, hit_boxes=None, rail_notice
                     label(f'train_detail_{n}','翌日発')
             else:
                 first_label,first_color=public_train_status(
-                    t.line,t.depart,now,train_operations,t.origin,t.destination)
+                    t.line,t.depart,now,train_operations,t.origin,t.destination,train_live)
                 label(f'train_service_first_{n}',first_label,color=first_color)
                 label(f'train_legacy_time_{n}',t.depart.strftime('%H:%M')+' → '+t.arrive.strftime('%H:%M'))
                 duration=int(round((t.arrive-t.depart).total_seconds()/60))
@@ -1079,10 +1081,11 @@ def render_original(now, weather, train_state, conf, hit_boxes=None, rail_notice
     return img
 
 
-def render_physical(now, weather, train_state, conf, rail_notice=None, marquee_px=0, train_operations=None):
+def render_physical(now, weather, train_state, conf, rail_notice=None, marquee_px=0, train_operations=None, train_live=None):
     return render_original(now,weather,train_state,conf,
                            rail_notice=rail_notice,marquee_px=marquee_px,
-                           train_operations=train_operations).transpose(Image.Transpose.ROTATE_180)
+                           train_operations=train_operations,
+                           train_live=train_live).transpose(Image.Transpose.ROTATE_180)
 
 
 def orientation_packet():
@@ -1179,6 +1182,7 @@ def read_live_settings():
     fresh['train_count']=max(1,min(3,int(fresh['train_count'])))
     if fresh.get('ir_route') not in ('via_kanazawa','kanazawa_tsubata','kaga_kanazawa'): fresh['ir_route']='via_kanazawa'
     fresh['train_update_seconds']=max(10,int(fresh['train_update_seconds']))
+    fresh['train_live_update_seconds']=max(20,min(120,int(fresh.get('train_live_update_seconds',30))))
     fresh['weather_update_minutes']=max(5,int(fresh['weather_update_minutes']))
     fresh['rail_status_update_minutes']=max(5,min(60,int(fresh.get('rail_status_update_minutes',5))))
     fresh['rail_status_enabled']=bool(fresh.get('rail_status_enabled',True))
@@ -1252,6 +1256,7 @@ def release_singleton_lock(fh):
 def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds=0):
     rail_notice=RailNotice()
     train_operations=TrainOperations()
+    train_live=LiveTrainState()
     weather=Weather(city=conf['weather_city'],provider=conf.get('weather_provider','weatherapi'))
     base_weather=weather
     train=TrainState([], '読込中',conf['train_source'])
@@ -1294,6 +1299,9 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
     train_operations_future=None
     train_operations_due=0.0
     train_operations_date=None
+    train_live_future=None
+    train_live_due=0.0
+    train_live_date=None
     marquee_px=0
     previous_marquee_px=0
     marquee=MarqueeScheduler()
@@ -1430,13 +1438,17 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                                 fusion_evidence=None
                                 fusion_evidence_at=0.0
                                 fusion_future=None  # old asynchronous coordinates ignored
-                        if any(prev_conf.get(k)!=conf.get(k) for k in ('rail_status_enabled','rail_status_update_minutes')):
+                        if any(prev_conf.get(k)!=conf.get(k) for k in ('rail_status_enabled','rail_status_update_minutes','train_live_update_seconds')):
                             notice_future=None
                             notice_due=0.0
                             train_operations_future=None
                             train_operations_due=0.0
                             train_operations_date=None
                             train_operations=TrainOperations()
+                            train_live=LiveTrainState()
+                            train_live_future=None
+                            train_live_date=None
+                            train_live_due=0.0
                             marquee_px=0
                             marquee.disable()
                             if not conf.get('rail_status_enabled',True):
@@ -1580,10 +1592,37 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                         train_operations=TrainOperations(error=str(exc)[:180])
                         train_operations_due=min(train_operations_due,tick+60)
                     train_operations_future=None
+                # The public /api/v1/trains response contains individual
+                # positions/0-or-positive delay, refreshed ~every 30 s.
+                # Keep network I/O off the frame/USB thread.
+                if train_live_date!=now.date():
+                    train_live=LiveTrainState()
+                    train_live_date=now.date()
+                    train_live_future=None
+                    train_live_due=0.0
+                if train_live_future is None and tick>=train_live_due:
+                    train_live_future=pool.submit(fetch_live_trains)
+                    train_live_due=tick+max(20,min(120,int(
+                        conf.get('train_live_update_seconds',30))))
+                if train_live_future is not None and train_live_future.done():
+                    try:
+                        train_live=train_live_future.result()
+                        if train_live.error:
+                            logger.warning('IR live train feed: %s',train_live.error)
+                            train_live_due=min(train_live_due,tick+30)
+                        else:
+                            logger.info('IR live train feed: %d records',
+                                        len(train_live.trains))
+                    except Exception as exc:
+                        train_live=LiveTrainState(error=str(exc)[:180])
+                        train_live_due=min(train_live_due,tick+30)
+                    train_live_future=None
             else:
                 rail_notice=RailNotice('運行情報：表示OFF')
                 train_operations=TrainOperations()
                 train_operations_future=None
+                train_live=LiveTrainState()
+                train_live_future=None
 
             # The official line data remains unchanged. This switch only
             # controls the exact string rendered in the marquee.
@@ -1600,6 +1639,16 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                 train.status,display_rail_text,
                 tuple((r.train_no,r.kind,r.minutes,r.start,r.end)
                       for r in train_operations.items),
+                # Re-render only when a status relevant to displayed train
+                # numbers changes, including the instant live evidence ages out.
+                tuple(public_train_status(
+                      part.strip(),dep,now,train_operations,org,dst,train_live)[0]
+                      for t in train.trains
+                      for part,dep,org,dst in (
+                          ((t.line.split(' / ',1)[0],t.depart,'加賀笠間','金沢'),
+                           (t.line.split(' / ',1)[1],t.transfer_depart,'金沢','津幡'))
+                          if t.transfer_depart is not None and ' / ' in t.line
+                          else ((t.line,t.depart,t.origin,t.destination),))),
                 train.loaded.strftime('%H:%M') if train.loaded else None,
                 tuple((t.depart.isoformat(),t.arrive.isoformat(),t.line,t.platform) for t in train.trains),
                 now.date()
@@ -1670,7 +1719,8 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                 # The preview follows the selected FPS mode and numeric rate.
                 base_logical=render_original(
                     now,weather,train,conf,rail_notice=rail_notice,
-                    skip_rail_notice=True,train_operations=train_operations)
+                    skip_rail_notice=True,train_operations=train_operations,
+                    train_live=train_live)
                 picture=base_logical.copy()
                 draw_rail_notice(picture,conf,display_rail_text,marquee_px)
                 picture.transpose(Image.Transpose.ROTATE_180).save(PREVIEW)
@@ -1684,7 +1734,8 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                 if base_logical is None or changed or hm_due or sec_due or force_full:
                     base_logical=render_original(
                         now,weather,train,conf,rail_notice=rail_notice,
-                        skip_rail_notice=True,train_operations=train_operations)
+                        skip_rail_notice=True,train_operations=train_operations,
+                        train_live=train_live)
                 transfer_start=time.monotonic()
                 kind='clock'
                 try:
@@ -1812,6 +1863,12 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                                     train_status=train.status,
                                     train_operation_count=len(train_operations.items),
                                     train_operation_error=train_operations.error,
+                                    train_live_status=('OK' if not train_live.error and
+                                                       train_live.fetched else '未確認'),
+                                    train_live_count=train_live.fresh_count(now),
+                                    train_live_error=train_live.error,
+                                    train_live_updated=(
+                                        train_live.fetched.isoformat() if train_live.fetched else ''),
                                     train_operations_updated=(
                                         train_operations.fetched.isoformat()
                                         if train_operations.fetched else ''),
