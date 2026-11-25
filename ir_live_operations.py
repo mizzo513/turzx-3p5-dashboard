@@ -247,7 +247,8 @@ def inspect_live_leg(train_no, boarding, alighting, scheduled_depart, now, live_
             (at==INDEX[begin] and nxt is not None and
              (nxt-INDEX[begin])*desired>0))
     if passed:
-        if scheduled_depart is not None and now<scheduled_depart:
+        if (scheduled_depart is not None and
+                (now<scheduled_depart or live.observed<scheduled_depart)):
             details['api_status']='未確認'
             details['reason']='位置は乗車駅通過後を示すが予定発車時刻前（時刻表と矛盾）'
         else:
