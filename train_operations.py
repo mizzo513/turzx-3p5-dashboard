@@ -224,7 +224,8 @@ def public_train_status(train_no,depart,now,operations=None,
     elif rec and rec.kind=='delayed' and rec.minutes is not None and rec.minutes>0:
         label=f'遅延 {rec.minutes}分';color=STATUS_COLORS['遅延']
     else:
-        live=status_for_leg(number,origin,destination,now,live_trains)
+        live=status_for_leg(number,origin,destination,now,live_trains,
+                            scheduled_depart=depart)
         if live is not None:
             label,color=live
         elif rec and rec.kind=='normal':
