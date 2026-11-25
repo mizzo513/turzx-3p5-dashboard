@@ -237,6 +237,8 @@ class SettingsWindow:
         ttk.Button(btnrow,text='列車候補・データを診断',command=self.diagnose_trains).grid(row=0,column=0,sticky='w',padx=(0,8),pady=(0,4))
         ttk.Button(btnrow,text='同梱時刻表を開く',command=self.open_schedule).grid(row=0,column=1,sticky='w',padx=(0,8),pady=(0,4))
         ttk.Button(btnrow,text='公式時刻表を見る',command=lambda:webbrowser.open(OFFICIAL_TIMETABLE)).grid(row=0,column=2,sticky='w',pady=(0,4))
+        ttk.Button(btnrow,text='在線判定の詳細',command=self.diagnose_live).grid(
+            row=1,column=2,sticky='w',padx=(0,8))
         ttk.Button(btnrow,text='CSVの読込',command=self.import_csv).grid(row=1,column=0,sticky='w',padx=(0,8))
         ttk.Button(btnrow,text='CSVを開く',command=self.open_csv).grid(row=1,column=1,sticky='w')
         # Persistent controls: tab switching never hides Save / Start / Stop.
@@ -580,6 +582,72 @@ class SettingsWindow:
             messagebox.showinfo('列車データ診断', '\n'.join(messages), parent=self.root)
         except Exception as exc:
             messagebox.showerror('診断エラー',str(exc),parent=self.root)
+
+
+    def diagnose_live(self):
+        """Explain each displayed train using the active engine's cached feed."""
+        state=self.runtime_state()
+        if not state:
+            messagebox.showwarning(
+                '在線判定の詳細',
+                '表示エンジンが動作していません。表示開始後に確認してください。',
+                parent=self.root)
+            return
+        entries=state.get('train_live_diagnostics') or []
+        lines=[
+            'TURZX 列車別在線情報・判定詳細',
+            '画面時刻：'+str(state.get('clock') or '未取得'),
+            '公式在線データ取得：'+str(state.get('train_live_updated') or '未取得'),
+            '有効な在線件数：'+str(state.get('train_live_count',0)),
+            '通信状態：'+str(state.get('train_live_status') or '未確認'),
+        ]
+        if state.get('train_live_error'):
+            lines.append('通信エラー：'+str(state['train_live_error']))
+        lines.append('')
+        if not entries:
+            lines.append('表示中の列車がありません。')
+        for entry in entries:
+            if not isinstance(entry,dict):
+                continue
+            lines.extend([
+                f"【候補{entry.get('candidate','?')}・"
+                f"{'加賀笠間側' if entry.get('leg')==1 else '金沢側'}】 "
+                f"{entry.get('display') or entry.get('number','')}",
+                f"乗車：{entry.get('boarding','?')} → {entry.get('alighting','?')}　"
+                f"予定出発：{entry.get('scheduled_depart','未取得')}",
+                f"API位置：{entry.get('from_station') or '未取得'} → "
+                f"{entry.get('to_station') or '未取得'}　"
+                f"API判定：{entry.get('api_status') or '判定不能'}　"
+                f"遅延分数：{entry.get('delay_minutes') if entry.get('delay_minutes') is not None else '―'}",
+                f"観測日時：{entry.get('observed') or '未取得'}",
+                f"有効期限：{entry.get('valid_until') or '未取得'}",
+                f"判定理由：{entry.get('reason') or '未取得'}",
+                '',
+            ])
+        report='\n'.join(lines)
+        win=tk.Toplevel(self.root)
+        win.title('在線判定の詳細｜V'+APP_VERSION)
+        win.geometry('830x560')
+        win.minsize(610,360)
+        body=ttk.Frame(win,padding=10)
+        body.pack(fill='both',expand=True)
+        body.columnconfigure(0,weight=1)
+        body.rowconfigure(0,weight=1)
+        content=tk.Text(body,wrap='word',font=('Yu Gothic UI',10),spacing2=3)
+        scroll=ttk.Scrollbar(body,orient='vertical',command=content.yview)
+        content.configure(yscrollcommand=scroll.set)
+        content.grid(row=0,column=0,sticky='nsew')
+        scroll.grid(row=0,column=1,sticky='ns')
+        content.insert('1.0',report)
+        content.configure(state='disabled')
+        actions=ttk.Frame(body)
+        actions.grid(row=1,column=0,columnspan=2,sticky='e',pady=(8,0))
+        def copy_report():
+            win.clipboard_clear()
+            win.clipboard_append(report)
+        ttk.Button(actions,text='内容をコピー',command=copy_report).pack(
+            side='left',padx=(0,8))
+        ttk.Button(actions,text='閉じる',command=win.destroy).pack(side='left')
 
     def reset_layout(self):
         """Explicit reset to the standard picture without changing weather/trains."""
