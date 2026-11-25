@@ -166,41 +166,107 @@ def _direction(live):
     return 0
 
 
-def status_for_leg(train_no,boarding,alighting,now,live_state):
-    """Return ('正常' | '遅延 N分' | '発車済', '#hex') or None.
+# The station displayed in the public train-position feed is the
+# most recently reported station, not a guaranteed proof of passage.
+CODE_TO_JP={code:name for name,code in STOP_NAMES.items()}
 
-    The reference point is the actual *boarding* station, not the transfer
-    destination: 加賀笠間 for leg 1 and 金沢 for leg 2.
+
+def inspect_live_leg(train_no, boarding, alighting, scheduled_depart, now, live_state):
+    """Explain the official-data verdict for one planned boarding.
+
+    A position beyond the boarding station before the scheduled departure
+    conflicts with the timetable. The caller must show 未確認, never 発車済.
+    This diagnostic is deliberately pure and usable in the local status UI.
     """
+    details={
+        'number':normalize_train_number(train_no),
+        'boarding':boarding,'alighting':alighting,
+        'scheduled_depart':scheduled_depart.isoformat() if scheduled_depart else '',
+        'observed':'','valid_until':'','from_station':'',
+        'to_station':'','delay_minutes':None,
+        'api_status':None,'reason':'照合可能な在線情報なし',
+    }
     if live_state is None:
-        return None
-    live=live_state.current_matches(train_no,now)
-    if live is None:
-        return None
+        details['reason']='在線情報をまだ取得していません'
+        return details
+    if live_state.error:
+        details['reason']='在線情報取得失敗: '+live_state.error[:140]
+        return details
+    candidates=[r for r in live_state.trains if
+                normalize_train_number(r.number)==details['number']]
+    if not candidates:
+        details['reason']='公式の在線一覧に該当列車なし（発車・運休の証拠ではありません）'
+        return details
+    if len(candidates)!=1:
+        details['reason']='列車番号が重複しており位置を特定できません'
+        return details
+    live=candidates[0]
+    details.update({
+        'observed':live.observed.isoformat(),
+        'valid_until':live.valid_until.isoformat(),
+        'from_station':CODE_TO_JP.get(live.at_station,live.at_station or '―'),
+        'to_station':CODE_TO_JP.get(live.to_station,live.to_station or '―'),
+        'delay_minutes':live.delay,
+    })
+    if not live.fresh_at(now):
+        details['reason']='在線情報の取得時刻または有効期限が不適合'
+        return details
     begin=STOP_NAMES.get(boarding)
     end=STOP_NAMES.get(alighting)
     if begin not in INDEX or end not in INDEX:
-        return None
+        details['reason']='乗車駅または降車駅の駅コードを解決できません'
+        return details
     desired=1 if INDEX[end]>INDEX[begin] else -1 if INDEX[end]<INDEX[begin] else 0
     direction=_direction(live)
     if not desired or direction!=desired:
-        return None
+        details['reason']='公式の進行方向が予定区間と一致しません'
+        return details
     at=INDEX.get(live.at_station)
     nxt=INDEX.get(live.to_station) if live.to_station else None
     if at is None:
-        return None
-    # Avoid treating an impossible backwards/too distant next station as
-    # conclusive motion past the platform.
+        details['reason']='公式の現在駅が不明です'
+        return details
+    if live.to_station and nxt is None:
+        details['reason']='次駅コードが未知のため位置を判定できません'
+        return details
     if nxt is not None and (nxt-at)*desired <= 0:
-        return None
+        details['reason']='現在駅と次駅の進行方向が矛盾しています'
+        return details
+
+    # Announcement/API delay supersedes the basic normal/passed states;
+    # it is still recorded with precise station diagnostics.
     if live.delay is not None and live.delay>0:
-        return f'遅延 {live.delay}分','#FAC563'
+        details['api_status']=f'遅延 {live.delay}分'
+        details['reason']='公式データの列車別遅延'
+        return details
     if live.delay is None:
-        return None
-    dist=(at-INDEX[begin])*desired
-    if dist>0:
-        return '発車済','#9CB9CA'
-    if dist==0 and nxt is not None and (nxt-INDEX[begin])*desired>0:
-        return '発車済','#9CB9CA'
-    # At or approaching the boarding station in the expected direction.
-    return '正常','#55E5A2'
+        details['reason']='遅延分数が未提供'
+        return details
+
+    passed=((at-INDEX[begin])*desired>0 or
+            (at==INDEX[begin] and nxt is not None and
+             (nxt-INDEX[begin])*desired>0))
+    if passed:
+        if scheduled_depart is not None and now<scheduled_depart:
+            details['api_status']='未確認'
+            details['reason']='位置は乗車駅通過後を示すが予定発車時刻前（時刻表と矛盾）'
+        else:
+            details['api_status']='発車済'
+            details['reason']='公式位置が乗車駅通過後を示しています'
+    else:
+        details['api_status']='正常'
+        details['reason']=('乗車駅に停車中（次駅への発車記録なし）'
+                           if at==INDEX[begin] and nxt is None else
+                           '公式位置が乗車駅より手前です')
+    return details
+
+
+def status_for_leg(train_no, boarding, alighting, now, live_state,
+                   scheduled_depart=None):
+    """Return official position status or None when no reliable evidence."""
+    details=inspect_live_leg(train_no,boarding,alighting,
+                             scheduled_depart,now,live_state)
+    status=details['api_status']
+    return (status,{'正常':'#55E5A2','遅延':'#FAC563',
+                    '発車済':'#9CB9CA','未確認':'#9CB9CA'
+                    }.get(status.split(' ',1)[0],'#9CB9CA')) if status else None
