@@ -39,7 +39,7 @@ from weatherapi_provider import fetch_weatherapi, WeatherAPIError
 from rail_official_status import RailNotice, fetch_official_rail_notice, display_notice_text
 from train_operations import (TrainOperations, fetch_official_train_operations,
                               public_train_status)
-from ir_live_operations import LiveTrainState, fetch_live_trains
+from ir_live_operations import LiveTrainState, fetch_live_trains, inspect_live_leg
 from marquee_scheduler import MarqueeScheduler
 from weather_fusion import fetch_weather_evidence, judge_weather
 from contextlib import nullcontext
@@ -525,6 +525,33 @@ def train_diagnostics(now, conf):
     except Exception as exc:
         result.update(status='取得失敗',error=str(exc),trains=[])
     return result
+
+
+def live_train_diagnostics(train_state, now, operations=None, live_state=None):
+    """Return the visible verdict AND its evidence for each displayed leg.
+
+    Only local cached data is read; do not launch an extra network request.
+    Used by the settings GUI to investigate timetable/position mismatches.
+    """
+    output=[]
+    for index,train in enumerate(train_state.trains,1):
+        if train.transfer_depart is not None:
+            parts=[part.strip() for part in train.line.split(' / ',1)]
+            first=parts[0] if parts else ''
+            second=parts[1] if len(parts)>1 else first
+            legs=((first,train.depart,'加賀笠間','金沢'),
+                  (second,train.transfer_depart,'金沢','津幡'))
+        else:
+            legs=((train.line,train.depart,train.origin,train.destination),)
+        for leg_no,(number,departure,boarding,alighting) in enumerate(legs,1):
+            info=inspect_live_leg(number,boarding,alighting,
+                                  departure,now,live_state)
+            visible,_color=public_train_status(
+                number,departure,now,operations,boarding,alighting,live_state)
+            info.update(candidate=index,leg=leg_no,display=visible,
+                        contradiction=('時刻表と矛盾' in info['reason']))
+            output.append(info)
+    return output
 
 
 def upcoming_from_ir_schedule(now, conf, path=None):
@@ -1869,6 +1896,8 @@ def run_dashboard(conf, preview=False, preview_demo=False, no_usb=False, seconds
                                     train_live_error=train_live.error,
                                     train_live_updated=(
                                         train_live.fetched.isoformat() if train_live.fetched else ''),
+                                    train_live_diagnostics=live_train_diagnostics(
+                                        train,now,train_operations,train_live),
                                     train_operations_updated=(
                                         train_operations.fetched.isoformat()
                                         if train_operations.fetched else ''),
