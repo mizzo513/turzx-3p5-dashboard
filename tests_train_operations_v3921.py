@@ -107,7 +107,7 @@ class TestPublicTrainOperations(unittest.TestCase):
             OperationRecord('443M','delayed',minutes=8,start='*',end='*'),
             OperationRecord('447M','normal',start='*',end='*')))
         self.assertEqual(
-            public_train_status('1649M',future,now,records)[0],'1649M 運休')
+            public_train_status('1649M',future,now,records)[0],'1649M 取り止め')
         self.assertEqual(
             public_train_status('443M',past,now,records)[0],'443M 遅延 8分')
         self.assertEqual(
@@ -175,7 +175,7 @@ class TestTransferCardRendering(unittest.TestCase):
         self.assertEqual(shown['train_service_first_1'][0],'1649M 遅延 8分')
         self.assertEqual(shown['train_service_second_1'][0],'445M 正常')
         self.assertEqual(shown['train_transfer_platform_1'][0],'5→7　3分')
-        self.assertEqual(shown['train_service_first_2'][0],'333M 運休')
+        self.assertEqual(shown['train_service_first_2'][0],'333M 取り止め')
         self.assertEqual(shown['train_transfer_platform_2'][0],'3→6　12分')
         self.assertEqual(shown['train_transfer_platform_3'][0],'直通')
         self.assertNotIn('番線',shown['train_transfer_platform_2'][0])
@@ -194,7 +194,7 @@ class TestTransferCardRendering(unittest.TestCase):
         updated,picture=self.record(TrainOperations((
             OperationRecord('1649M','cancelled',start='*',end='*'),)))
         self.assertIsNotNone(ImageChops.difference(original,picture).getbbox())
-        self.assertEqual(updated['train_service_first_1'][0],'1649M 運休')
+        self.assertEqual(updated['train_service_first_1'][0],'1649M 取り止め')
 
 
 if __name__=='__main__':
