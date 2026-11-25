@@ -177,7 +177,7 @@ class SettingsWindow:
             value=route_labels.get(self.conf.get('ir_route','via_kanazawa'),
                                    route_choices[0]))
         ttk.Combobox(main,textvariable=self.vars['ir_route'],values=route_choices,state='readonly',width=28).grid(row=r,column=1,sticky='w',padx=(10,0));r+=1
-        ttk.Label(main,text='IR時刻表に収録された列車同士を金沢で接続。遅延・運休は反映しません。',foreground='#5c7184').grid(row=r,column=0,columnspan=3,sticky='w');r+=1
+        ttk.Label(main,text='時刻と番線は予定値です。列車番号別の運行状況はIR公式の在線情報と照合します。',foreground='#5c7184').grid(row=r,column=0,columnspan=3,sticky='w');r+=1
         ttk.Separator(main).grid(row=r,column=0,columnspan=3,sticky='ew',pady=(9,6));r+=1
         self.vars['rail_status_enabled']=tk.BooleanVar(
             value=bool(self.conf.get('rail_status_enabled',True)))
@@ -228,9 +228,10 @@ class SettingsWindow:
         ttk.Button(links,text='JR七尾線 公式運行情報',
                    command=lambda:webbrowser.open('https://trafficinfo.westjr.co.jp/?areaId=1')
                    ).pack(side='left')
-        ttk.Label(main,text='取得失敗時は「未確認」。長文は乗換枠上部で横スクロールします。',
+        ttk.Label(main,text='列車別：正常／遅延／取り止め／発車済／発車前／未確認。上部のテロップは別途取得します。',
                   foreground='#5c7184',wraplength=580).grid(
                       row=r,column=0,columnspan=3,sticky='w',pady=(0,6));r+=1
+        self.field(main,'在線データ更新間隔（秒）','train_live_update_seconds',r,'30');r+=1
         self.paired_fields(main,r,('列車更新間隔（秒）','train_update_seconds'),('表示列車数','train_count'));r+=1
         btnrow=ttk.Frame(main);btnrow.grid(row=r,column=0,columnspan=3,sticky='w',pady=(5,7));r+=1
         ttk.Button(btnrow,text='列車候補・データを診断',command=self.diagnose_trains).grid(row=0,column=0,sticky='w',padx=(0,8),pady=(0,4))
@@ -483,6 +484,9 @@ class SettingsWindow:
             raise ValueError('スクロールfpsの制御方式を選び直してください。')
         conf['rail_scroll_fps_mode']=fps_modes[mode]
         conf['train_update_seconds']=int(conf['train_update_seconds'])
+        conf['train_live_update_seconds']=int(conf.get('train_live_update_seconds',30))
+        if not 20<=conf['train_live_update_seconds']<=120:
+            raise ValueError('在線情報の更新間隔は20～120秒にしてください。')
         validate_preset(conf.get('settings_color_preset',DEFAULT_PRESET))
         choice=conf.get('ir_route','加賀笠間→金沢→津幡')
         mapping={'加賀笠間→金沢→津幡':'via_kanazawa','加賀笠間→金沢':'kaga_kanazawa','金沢→津幡':'kanazawa_tsubata'}
