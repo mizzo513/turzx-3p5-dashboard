@@ -78,12 +78,21 @@ class OfficialIRLiveFeedTests(unittest.TestCase):
         idx=next(i for i,x in enumerate(moved) if x.number=='3001M')
         moved[idx]=replace(moved[idx],to_station='Higashi-Kanazawa')
         updated=LiveTrainState(tuple(moved),NOW)
+        # The observed departure conflicts with a still-future timetable.
         self.assertEqual(self.status('3001M','金沢','津幡',live=updated),
-                         '3001M 発車済')
+                         '3001M 未確認')
+        self.assertEqual(self.status(
+            '3001M','金沢','津幡',live=updated,
+            dep=NOW-timedelta(minutes=2)), '3001M 発車済')
 
     def test_passed_actual_boarding_station_is_departed(self):
-        self.assertEqual(self.status('637M','加賀笠間','金沢'),'637M 発車済')
-        self.assertEqual(self.status('433M','金沢','津幡'),'433M 発車済')
+        earlier=NOW-timedelta(minutes=3)
+        self.assertEqual(
+            self.status('637M','加賀笠間','金沢',dep=earlier),
+            '637M 発車済')
+        self.assertEqual(
+            self.status('433M','金沢','津幡',dep=earlier),
+            '433M 発車済')
         self.assertEqual(self.status('530M','金沢','津幡'),'530M 発車前')
         # 530M is opposite-direction, and can never be confirmed
         # as running for a Kanazawa->Tsubata transfer.
@@ -185,7 +194,7 @@ class VisualStatusIntegrationTests(unittest.TestCase):
                                   train_live=parse_live_feed(REALISTIC,now))
         self.assertEqual(frame.size,(480,320))
         self.assertEqual(recorded['train_service_first_1'],'1641M 正常')
-        self.assertEqual(recorded['train_service_second_1'],'433M 発車済')
+        self.assertEqual(recorded['train_service_second_1'],'433M 未確認')
         self.assertEqual(recorded['train_transfer_platform_1'],'3→6　12分')
         for key in ['train_time_1','train_kan_arr_1','train_kan_dep_1','train_arrive_1']:
             self.assertIn(key,recorded)
